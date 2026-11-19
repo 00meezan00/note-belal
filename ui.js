@@ -87,12 +87,28 @@ export function fail(e) { console.error(e); toast('ما اتحفظش: ' + (e?.me
 export function dictate(onText, onState) {
   const R = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!R) return null;
-  const r = new R();
-  r.lang = 'ar-EG'; r.interimResults = true; r.continuous = false;
-  let final = '';
-  r.onresult = e => { let s = ''; for (const res of e.results) s += res[0].transcript; final = s; onText(s); };
-  r.onend = () => onState(false, final);
-  r.onerror = () => onState(false, final);
-  r.start(); onState(true);
-  return r;
+  // بيفضل يسمع لحد ما تدوس وقف: لو الموبايل قفل التسجيل بعد سكتة، بيبدأ تاني لوحده ويكمّل على الكلام اللي فات
+  let want = true, finals = '', r = null, restarts = 0;
+  const begin = () => {
+    r = new R();
+    r.lang = 'ar-EG'; r.interimResults = true; r.continuous = true;
+    r.onresult = e => {
+      let interim = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const res = e.results[i];
+        if (res.isFinal) finals += res[0].transcript.trim() + ' ';
+        else interim += res[0].transcript;
+      }
+      restarts = 0;
+      onText((finals + interim).trim());
+    };
+    r.onerror = ev => { if (['not-allowed', 'service-not-allowed', 'audio-capture'].includes(ev.error)) want = false; };
+    r.onend = () => {
+      if (want && restarts < 20) { restarts++; try { begin(); return; } catch (e) { want = false; } }
+      onState(false, finals.trim());
+    };
+    r.start();
+  };
+  begin(); onState(true);
+  return { stop() { want = false; try { r && r.stop(); } catch (e) { onState(false, finals.trim()); } } };
 }

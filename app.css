@@ -37,6 +37,7 @@ main{padding:4px 16px calc(120px + var(--safe-b))}
 #top .t h1{margin:0;font-family:"Reem Kufi",system-ui,sans-serif;font-weight:600;font-size:30px;line-height:1.2}
 .rb{width:44px;height:44px;display:flex;align-items:center;justify-content:center;border-radius:22px;background:var(--paper);border:1px solid var(--line);color:var(--ink);text-decoration:none;flex:none;cursor:pointer;padding:0}
 .rb.amb{background:var(--amb);border-color:var(--amb);color:#15202B}
+.rb.live{animation:pulse 1.2s ease-in-out infinite;box-shadow:0 0 0 6px var(--amb-soft)}
 
 /* layout */
 .stack{display:flex;flex-direction:column;gap:12px}

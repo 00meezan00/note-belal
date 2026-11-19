@@ -4,6 +4,7 @@ import { esc, ic, fd, fMonth, today, monthStart, empty, openSheet, closeSheet, s
 import { stepsBlock, linksSlot, archiveWithUndo, doRefresh, openTask } from './comps.js';
 
 const st = { former: false, role: '' };
+let noteRec = null;
 const avg = r => { const v = Object.values(r?.scores || {}).map(Number).filter(Boolean); return v.length ? (v.reduce((a, b) => a + b, 0) / v.length).toFixed(1) : null; };
 
 async function criteria() { return Object.fromEntries((await list('role_criteria')).map(r => [r.role, r.criteria])); }
@@ -116,8 +117,10 @@ export default {
       async 'note-add'(form, p) { const t = form.querySelector('[name=text]').value.trim(); if (!t) return; try { await ins('member_notes', { member_id: p.id, text: t }); doRefresh(); } catch (e) { fail(e); } },
       'note-mic'(el) {
         const inp = el.closest('form').querySelector('[name=text]');
-        const r = dictate(t => (inp.value = t), live => el.classList.toggle('live', live));
-        if (!r) { inp.focus(); toast('دوس على مايك الكيبورد واتكلم'); }
+        if (noteRec) { noteRec.stop(); return; }
+        const pre = inp.value.trim() ? inp.value.trim() + ' ' : '';
+        noteRec = dictate(t => (inp.value = pre + t), live => { el.classList.toggle('live', live); if (!live) noteRec = null; });
+        if (!noteRec) { inp.focus(); toast('دوس على مايك الكيبورد واتكلم'); }
       },
       async 'note-del'(el) { try { await del('member_notes', el.dataset.id); doRefresh(); } catch (e) { fail(e); } },
       async 'member-edit'(el, p) { memberSheet(await one('team_members', p.id)); },

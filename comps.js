@@ -180,8 +180,11 @@ export const captureActions = {
   'cap-mic'(el) {
     const ta = sheetEl().querySelector('[name=text]');
     if (rec) { rec.stop(); return; }
-    rec = dictate(t => (ta.value = t), (live) => {
-      el.classList.toggle('live', live); document.getElementById('cap-hint').textContent = live ? 'بسمعك… دوس تاني لما تخلص' : 'تمام، راجع الكلام واحفظ';
+    const pre = ta.value.trim() ? ta.value.trim() + ' ' : '';
+    rec = dictate(t => (ta.value = pre + t), live => {
+      el.classList.toggle('live', live);
+      const h = document.getElementById('cap-hint');
+      if (h) h.textContent = live ? 'بسمعك… دوس على المايك تاني لما تخلص' : 'تمام، راجع الكلام واحفظ';
       if (!live) rec = null;
     });
     if (!rec) { ta.focus(); toast('دوس على مايك الكيبورد واتكلم'); }
