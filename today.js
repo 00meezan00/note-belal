@@ -23,12 +23,13 @@ export default {
     dock: 'today',
     async render() {
       const t = today();
-      const [tasks, goals, prog, company, review] = await Promise.all([
+      const [tasks, goals, prog, company, review, pays] = await Promise.all([
         list('tasks', { lte: ['due_on', t], order: 'created_at' }),
         list('goals', { eq: { status: 'active' }, order: 'due_on' }),
         list('v_goal_progress'),
         single('company'),
         list('weekly_reviews', { eq: { week_start: weekStart() } }),
+        list('v_calendar', { in: ['kind', ['commitment', 'installment']], lte: ['on_date', addDays(t, 1)], order: 'on_date' }).catch(() => []),
       ]);
       const day = tasks.filter(x => x.due_on === t || !x.done).sort((a, b) => (a.done - b.done) || (a.due_on < b.due_on ? -1 : 1));
       const labels = await linkLabels(day.map(x => x.id));
@@ -54,6 +55,7 @@ export default {
           ${top.length ? `<div class="sec">أهم ${top.length === 3 ? '3 حاجات' : 'حاجات'} النهاردة</div><div class="card list" style="padding:4px 14px;border-color:var(--amb);border-width:1.5px">${top.map(x => taskRow(x, { linkLabel: labels[x.id] })).join('')}</div>` : ''}
           <div class="between"><span class="sec">${top.length ? 'باقي المهام' : 'مهام النهاردة'}</span><button class="btn sm" data-act="new-task">${ic('plus', 16)}مهمة</button></div>
           ${rest.length ? `<div class="card list" style="padding:4px 14px">${rest.map(x => taskRow(x, { linkLabel: labels[x.id] })).join('')}</div>` : (top.length ? '' : empty('مفيش مهام النهاردة. دوس المايك تحت وسجّل أول مهمة.<br><span class="mut">علّم على النجمة جنب أهم 3 حاجات عشان يطلعوا فوق.</span>'))}
+          ${pays.length ? `<a class="card row" href="#/money" style="gap:12px">${ic('wallet', 22)}<div style="flex:1;line-height:1.5"><div style="font-weight:600">مواعيد دفع</div><div class="mut">${pays.map(x => `${esc(x.title)} · ${x.on_date === t ? 'النهاردة' : 'بكرة'}`).join('، ')}</div></div>${ic('chev', 18)}</a>` : ''}
           ${near.length ? `<div class="between"><span class="sec">قرّب موعدها</span><a href="#/goals" class="mut" style="font-weight:500">كل الأهداف</a></div>${near.map(g => goalCard(g, P[g.id])).join('')}` : ''}
         </div>`,
       };

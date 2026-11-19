@@ -116,6 +116,8 @@ export default {
           <div class="card"><b style="font-weight:600">معايير التقييم لكل وظيفة</b><div class="mut">افصل بين المعايير بفاصلة</div>
             ${crit.map(c => `<label class="field" style="margin-top:10px"><span>${esc(c.role)}</span><input value="${esc(c.criteria.join('، '))}" data-change="crit" data-id="${c.id}"></label>`).join('')}
             <form class="row" data-act-submit="crit-add" style="margin-top:10px"><input class="inp" name="role" placeholder="وظيفة جديدة"><button class="btn sm">ضيف</button></form></div>
+          <div class="card list"><b style="font-weight:600;display:block;padding-bottom:4px">الأمان</b>
+            ${row('قفل فلوسي بـ Face ID', 'لو قفلته، فلوسي هتفتح من غير بصمة', sw(p?.money_lock_enabled !== false, 'data-act="pref" data-k="money_lock_enabled"'))}</div>
           <div class="card list"><b style="font-weight:600;display:block;padding-bottom:4px">البيانات</b>
             ${row('نسخة احتياطية', 'ملف فيه كل بياناتك، احتفظ بيه على الموبايل', '<button class="btn sm" data-act="backup">نزّل نسخة</button>')}
             ${row('الأرشيف', 'الحاجات اللي شيلتها', '<a class="btn sm" href="#/archive">افتح</a>')}

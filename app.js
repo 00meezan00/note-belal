@@ -1,15 +1,17 @@
 // نوتة بلال — الهيكل الأساسي: الدخول، التنقل، الشريط اللي تحت، القائمة
 import { sb, configured, auth, single, rpc, upd, upsert } from './db.js';
-import { esc, ic, closeSheet, toast, fail, formOf } from './ui.js';
+import { esc, ic, closeSheet, toast, fail, formOf, lockScroll, unlockScroll } from './ui.js';
 import { setRefresh, taskActions, stepActions, linkActions, captureActions, openCapture, fillLinks } from './comps.js';
 import today from './today.js';
 import goals, { goalGlobal } from './goals.js';
 import team, { teamGlobal } from './team.js';
 import company from './company.js';
 import misc from './misc.js';
+import projects, { projectGlobal } from './projects.js';
+import money, { moneyGlobal } from './money.js';
 
-const SCREENS = { ...today, ...goals, ...team, ...company, ...misc };
-const GLOBAL = { ...goalGlobal, ...teamGlobal, ...taskActions, ...stepActions, ...linkActions, ...captureActions,
+const SCREENS = { ...today, ...goals, ...team, ...company, ...misc, ...projects, ...money };
+const GLOBAL = { ...goalGlobal, ...teamGlobal, ...projectGlobal, ...moneyGlobal, ...taskActions, ...stepActions, ...linkActions, ...captureActions,
   'close-sheet': closeSheet, capture: openCapture, menu: openMenu, 'close-menu': closeMenu };
 
 const $ = s => document.querySelector(s);
@@ -36,7 +38,7 @@ function renderTop(v) {
   const left = v.back
     ? `<a href="${v.back}" class="rb" aria-label="رجوع">${ic('back')}</a>`
     : `<button class="rb" data-act="menu" aria-label="القائمة">${ic('menu')}</button>`;
-  $('#top').innerHTML = `${left}<div class="t">${v.sub ? `<div class="s">${esc(v.sub)}</div>` : ''}<h1>${esc(v.title || '')}</h1></div>
+  $('#top').innerHTML = `${left}<div class="t">${v.sub ? `<div class="s">${esc(v.sub)}</div>` : ''}<h1${(v.title || '').length > 14 ? ' class="long"' : ''}>${esc(v.title || '')}</h1></div>
     ${v.right || ''}${v.noSearch ? '' : `<a href="#/search" class="rb" aria-label="بحث">${ic('search', 21)}</a>`}`;
 }
 
@@ -101,7 +103,7 @@ function openMenu() {
     : `<a href="${href}">${ic(icon, 21)}<span>${label}</span>${meta ? `<span class="mut">${meta}</span>` : ''}</a>`;
   d.innerHTML = `<div class="back" data-act="close-menu"></div><nav class="panel" aria-label="القائمة">
     <div style="padding:22px 20px 14px;border-bottom:1px dashed var(--line)"><div class="disp" style="font-size:26px">نوتة بلال</div><div class="mut">Fix Team</div></div>
-    <div class="gh">شغلي الخاص</div>${item('#/projects', 'layers', 'مشاريعي', '', true)}${item('#/money', 'wallet', 'فلوسي', '', true)}
+    <div class="gh">شغلي الخاص</div>${item('#/projects', 'layers', 'مشاريعي')}${item('#/money', 'wallet', 'فلوسي', 'مقفول')}
     <div class="gh">متابعة</div>${item('#/problems', 'alert', 'سجل المشاكل')}${item('#/weekly', 'review', 'المراجعات الأسبوعية', '', true)}${item('#/recurring', 'repeat', 'المهام المتكررة', '', true)}${item('#/calendar', 'cal', 'التقويم', '', true)}
     <div class="gh">تطوير</div>${item('#/courses', 'book', 'الكورسات', '', true)}${item('#/structure', 'tree', 'الهيكل والنظام', '', true)}${item('#/hiring', 'user', 'التوظيف', '', true)}
     <div class="gh">تقارير</div>${item('#/report', 'doc', 'تقرير للمالك', '', true)}
@@ -109,8 +111,9 @@ function openMenu() {
   </nav>`;
   d.addEventListener('click', e => { if (e.target.closest('a[href]')) closeMenu(); });
   document.body.appendChild(d);
+  lockScroll();
 }
-function closeMenu() { document.getElementById('drawer')?.remove(); }
+function closeMenu() { const d = document.getElementById('drawer'); if (!d) return; d.remove(); unlockScroll(); }
 
 // ---------- الدخول ----------
 function authScreen() {

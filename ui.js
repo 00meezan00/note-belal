@@ -54,17 +54,31 @@ export const empty = t => `<div class="empty">${t}</div>`;
 export const sw = (on, attrs = '') => `<button class="switch${on ? ' on' : ''}" role="switch" aria-checked="${!!on}" ${attrs}></button>`;
 export const opts = (arr, v) => arr.map(o => { const [val, lab] = Array.isArray(o) ? o : [o, o]; return `<option value="${esc(val)}"${String(val) === String(v ?? '') ? ' selected' : ''}>${esc(lab)}</option>`; }).join('');
 
+// ---------- قفل حركة الصفحة اللي ورا (الآيفون محتاج position:fixed) ----------
+let locks = 0, savedY = 0;
+export function lockScroll() {
+  if (locks++ > 0) return;
+  savedY = window.scrollY;
+  Object.assign(document.body.style, { position: 'fixed', top: `-${savedY}px`, left: '0', right: '0', width: '100%', overflow: 'hidden' });
+}
+export function unlockScroll() {
+  if (locks === 0) return;
+  if (--locks > 0) return;
+  Object.assign(document.body.style, { position: '', top: '', left: '', right: '', width: '', overflow: '' });
+  window.scrollTo(0, savedY);
+}
+
 // ---------- الشيت (النافذة اللي بتطلع من تحت) ----------
 const root = () => document.getElementById('sheet-root');
 export function openSheet(title, body) {
   const r = root();
   r.querySelector('.sheet').innerHTML = `<div class="hd"><h2>${title}</h2><button class="rb" data-act="close-sheet" aria-label="قفل">${ic('x', 20)}</button></div>${body}`;
+  if (r.hidden) lockScroll();
   r.hidden = false;
-  document.body.style.overflow = 'hidden';
   const f = r.querySelector('[autofocus]'); if (f) setTimeout(() => f.focus(), 50);
   return r.querySelector('.sheet');
 }
-export function closeSheet() { root().hidden = true; document.body.style.overflow = ''; }
+export function closeSheet() { const r = root(); if (r.hidden) return; r.hidden = true; unlockScroll(); }
 export const sheetEl = () => root().querySelector('.sheet');
 export function formOf(el) {
   const o = {};
