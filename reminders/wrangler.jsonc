@@ -1,0 +1,10 @@
+{
+  // اسم الـ Worker لازم يبقى نفس الاسم اللي عملته على Cloudflare بالظبط
+  "name": "nota-reminders",
+  "main": "index.js",
+  "compatibility_date": "2025-09-01",
+  // بيصحى كل 5 دقايق يشوف التذكيرات
+  "triggers": { "crons": ["*/5 * * * *"] },
+  // بيحافظ على المتغيرات اللي حطيتها من لوحة Cloudflare
+  "keep_vars": true
+}
