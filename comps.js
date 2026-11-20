@@ -151,6 +151,86 @@ export const linkActions = {
   },
 };
 
+// ---------------- فهم الفلوس من الكلام ----------------
+// "أكلت بـ 300 جنيه" ← مصروف 300 على بند الأكل. "قبضت 5000" ← دخل 5000.
+const norm = s => String(s || '')
+  .replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d))
+  .replace(/٫/g, '.').replace(/(\d)[,٬](\d{3})/g, '$1$2')
+  .replace(/[ً-ْـ]/g, '').replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي').toLowerCase();
+const NUMW = {
+  واحد: 1, اتنين: 2, اثنين: 2, تلاته: 3, ثلاثه: 3, اربعه: 4, خمسه: 5, سته: 6, سبعه: 7, تمانيه: 8, ثمانيه: 8, تسعه: 9, عشره: 10,
+  حداشر: 11, اتناشر: 12, تلتاشر: 13, تلاتاشر: 13, اربعتاشر: 14, خمستاشر: 15, ستاشر: 16, سبعتاشر: 17, تمنتاشر: 18, تسعتاشر: 19,
+  عشرين: 20, تلاتين: 30, ثلاثين: 30, اربعين: 40, خمسين: 50, ستين: 60, سبعين: 70, تمانين: 80, ثمانين: 80, تسعين: 90,
+  ميه: 100, مايه: 100, مئه: 100, مائه: 100, ميت: 100, ميتين: 200, مئتين: 200, ميتان: 200,
+  تلتميه: 300, تلاتميه: 300, ثلاثمائه: 300, ثلاثميه: 300, ربعميه: 400, اربعميه: 400, اربعمائه: 400, خمسميه: 500, خمسمائه: 500,
+  ستميه: 600, ستمائه: 600, سبعميه: 700, سبعمائه: 700, تمنميه: 800, تمانميه: 800, ثمانمائه: 800, تسعميه: 900, تسعمائه: 900,
+  الف: 1000, الاف: 1000, الفين: 2000,
+};
+const numOf = w => { if (/^\d+(\.\d+)?$/.test(w)) return parseFloat(w); if (NUMW[w] != null) return NUMW[w]; const s = w.replace(/^[وب]/, ''); return NUMW[s] ?? (/^\d+(\.\d+)?$/.test(s) ? parseFloat(s) : null); };
+const MONEY_WORD = /^(جنيه|جنيهات|جنية|جنيها|ج|ج\.م|pound|egp)$/;
+// بيلاقي أول مبلغ في الكلام، ويرجّع المبلغ والكلام من غيره
+function findAmount(text) {
+  const words = norm(text).replace(/(\d)([^\d\s.])/g, '$1 $2').replace(/([^\d\s.])(\d)/g, '$1 $2').split(/\s+/).filter(Boolean);
+  let best = null;
+  for (let i = 0; i < words.length; i++) {
+    if (numOf(words[i]) == null || words[i] === 'و' || words[i] === 'ب') continue;
+    let total = 0, cur = 0, last = 0, j = i, used = [];
+    for (; j < words.length; j++) {
+      const w = words[j], v = numOf(w);
+      if (w === 'و' || w === 'ب') { used.push(j); continue; }
+      if (/^و?نص$/.test(w) && last) { cur += last / 2; used.push(j); continue; }
+      if (v == null) break;
+      if (v === 1000 && /^(و?الف|و?الاف)$/.test(w)) { total += (cur || 1) * 1000; cur = 0; last = 1000; }
+      else if (v >= 1000) { total += v; last = 1000; }
+      else { cur += v; last = v >= 100 ? 100 : v >= 10 ? 10 : 1; }
+      used.push(j);
+    }
+    const amount = total + cur;
+    while (used.length && /^[وب]$/.test(words[used[used.length - 1]])) used.pop();
+    const money = MONEY_WORD.test(words[j] || '');
+    if (money) used.push(j);
+    if (amount > 0 && (!best || (money && !best.money))) best = { amount, money, used: new Set(used) };
+    if (best?.money) break;
+    i = j;
+  }
+  if (!best) return null;
+  const rest = words.filter((_, k) => !best.used.has(k)).join(' ').replace(/(^|\s)[بو](\s|$)/g, ' ').replace(/\s+/g, ' ').trim();
+  return { amount: Math.round(best.amount * 100) / 100, money: best.money, rest };
+}
+const INCOME_RE = /(قبضت|استلمت|جالي|جاتلي|جالى|دخلي|دخللي|المرتب|مرتبي|كسبت|اتحولي|حولولي|بعت لي|بعتلي|مكسب|عمولتي|عموله)/;
+const SPEND_RE = /(صرفت|دفعت|اشتريت|جبت|اكلت|شربت|اتغديت|اتعشيت|فطرت|حطيت|ركبت|خلصت علي|راحوا علي|دفعنا|اشترينا|مصروف|مصاريف)/;
+// كلمات لكل بند: بنقارن بيها اسم البند عندك
+const CAT_HINTS = [
+  [/اكل|شرب|طعام|مطاعم/, /(اكل|اكلت|غدا|غدي|اتغديت|فطار|فطرت|عشا|اتعشيت|شربت|قهوه|شاي|نسكافيه|مطعم|سندوتش|ساندوتش|كشري|فول|طعميه|عصير|حلويات|بيتزا|فراخ|برجر|شاورما|سوبر ماركت|بقاله|مياه)/],
+  [/مواصلات|بنزين|عربيه|انتقال/, /(بنزين|مواصلات|تاكسي|اوبر|كريم|ميكروباص|توكتوك|توك توك|اتوبيس|مترو|ركبت|موتوسيكل|جاز|سولار|عربيه|جراج|غسيل العربيه)/],
+  [/كورس|تعليم|كتب/, /(كورس|كورسات|دوره|كتاب|كتب|محاضره|ورشه)/],
+  [/فواتير|كهربا|نت|موبايل/, /(كهربا|كهرباء|فاتوره|نت|انترنت|رصيد|كارت شحن|باقه|مياه|غاز)/],
+  [/لبس|هدوم/, /(لبس|هدوم|قميص|بنطلون|جزمه|كوتشي)/],
+  [/صحه|علاج|دكتور/, /(دكتور|دوا|علاج|صيدليه|تحاليل)/],
+];
+function findCat(t, cats) {
+  for (const c of cats) {   // لو اسم البند نفسه في الكلام
+    const words = norm(c.name).split(/\s+/).filter(w => w.length >= 3 && !/^(و|في|من)$/.test(w));
+    if (words.some(w => t.includes(w.replace(/^و/, '')))) return c;
+  }
+  for (const [nameRe, wordRe] of CAT_HINTS) {
+    if (!wordRe.test(t)) continue;
+    const c = cats.find(c => nameRe.test(norm(c.name))); if (c) return c;
+  }
+  return null;
+}
+export function parseMoney(text, cats = []) {
+  const a = findAmount(text); if (!a) return null;
+  const t = norm(text);
+  const sure = a.money || SPEND_RE.test(t);
+  if (!SPEND_RE.test(t) && !INCOME_RE.test(t) && /(لازم|محتاج|عايز|هدفع|هادفع|هشتري|هاشتري|تابع|اتابع|كلم|اكلم|تحصيل|حصل|فكر|مهمه|فكره|مشكله|المورد|العميل)/.test(t)) return null;   // كلام عن شغل جاي، مش فلوس اتصرفت
+  if (!a.money && /(الساعه|ساعه|ساعات|دقيقه|دقايق|بكره|يوم|ايام|اسبوع|شهور|مره|مرات|محلات|جهاز|اجهزه)/.test(t)) return null;   // "كلم المحل الساعة 3" دي مهمة مش فلوس
+  if (INCOME_RE.test(t)) return { type: 'income', amount: a.amount, note: a.rest };
+  const cat = findCat(t, cats);
+  if (sure || (cat && a.rest.split(' ').length <= 3)) return { type: 'expense', amount: a.amount, cat, note: a.rest };
+  return null;
+}
+
 // ---------------- التسجيل السريع (زرار المايك) ----------------
 let rec = null;
 export async function openCapture() {
@@ -161,31 +241,68 @@ export async function openCapture() {
   const canVoice = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
   openSheet('سجّل بسرعة', `
     <button class="mic-big" data-act="cap-mic" aria-label="${canVoice ? 'اتكلم' : 'اكتب بصوتك من الكيبورد'}">${ic('mic', 42)}</button>
-    <div class="mut" style="text-align:center;margin-top:-4px" id="cap-hint">${canVoice ? 'دوس واتكلم' : 'اكتب، أو دوس مايك الكيبورد واتكلم'}</div>
-    <textarea class="inp" name="text" rows="3" placeholder="اكتب أو اتكلم…" style="font-size:17px;line-height:1.7"></textarea>
+    <div class="mut" style="text-align:center;margin-top:-4px" id="cap-hint">${canVoice ? 'دوس واتكلم. قول مثلًا: أكلت بـ 300 جنيه' : 'اكتب، أو دوس مايك الكيبورد واتكلم'}</div>
+    <textarea class="inp" name="text" rows="3" placeholder="اكتب أو اتكلم…" style="font-size:17px;line-height:1.7" data-input="cap-text"></textarea>
+    <div class="card" id="cap-got" hidden style="padding:10px 14px;background:var(--amb-soft);border-color:var(--amb)"></div>
     <div><div style="font-size:14px;font-weight:600;margin-bottom:8px">تتسجل كـ</div>
       <div class="types" data-group="ctype">
         ${[['task','مهمة'],['idea','فكرة'],['problem','مشكلة'],['note','رأي في فرد'],['expense','مصروف'],['income','دخل']].map(([v, l], i) => `<button type="button" data-v="${v}" class="${i === 0 ? 'on' : ''}" data-act="cap-type">${l}</button>`).join('')}
       </div></div>
     <div data-extra="note" hidden><label class="field"><span>عن مين؟</span><select name="member">${opts(members.map(m => [m.id, m.name]))}</select></label></div>
-    <div data-extra="expense" hidden class="grid2"><label class="field"><span>المبلغ</span><input name="amount" inputmode="decimal" placeholder="150"></label><label class="field"><span>البند</span><select name="cat">${opts(cats.map(c => [c.id, c.name]))}</select></label></div>
+    <div data-extra="expense" hidden class="grid2"><label class="field"><span>المبلغ</span><input name="amount" inputmode="decimal" placeholder="150"></label><label class="field"><span>البند</span><select name="cat"><option value="">من غير بند</option>${opts(cats.map(c => [c.id, c.name]))}</select></label></div>
     <div data-extra="income" hidden><label class="field"><span>المبلغ</span><input name="in_amount" inputmode="decimal" placeholder="2500"></label></div>
     <button class="btn amb" data-act="cap-save">حفظ</button>`);
+  sheetEl()._cats = cats;
+}
+function setType(v) {
+  const s = sheetEl();
+  s.querySelectorAll('[data-group=ctype] button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
+  s.querySelectorAll('[data-extra]').forEach(x => (x.hidden = x.dataset.extra !== v));
+}
+// بيقرا الكلام: لو فيه فلوس بيختار "مصروف" أو "دخل" لوحده ويكتب المبلغ والبند
+function readMoney() {
+  const s = sheetEl(); if (!s || !s.querySelector('[data-group=ctype]')) return null;
+  const got = s.querySelector('#cap-got');
+  const m = parseMoney(s.querySelector('[name=text]').value, s._cats || []);
+  if (!m) { got.hidden = true; return null; }
+  setType(m.type);
+  if (m.type === 'expense') { s.querySelector('[name=amount]').value = m.amount; s.querySelector('[name=cat]').value = m.cat?.id || ''; }
+  else s.querySelector('[name=in_amount]').value = m.amount;
+  got.hidden = false;
+  got.innerHTML = `فهمت: <b>${m.type === 'expense' ? 'مصروف' : 'دخل'} <span class="num">${n(m.amount)}</span> جنيه</b>${m.cat ? ` على "${esc(m.cat.name)}"` : m.type === 'expense' ? ' (من غير بند)' : ''}`;
+  return m;
+}
+async function saveMoney(type, f, text) {
+  if (type === 'expense') {
+    const a = parseFloat(f.amount); if (!a) { toast('اكتب المبلغ'); return false; }
+    const r = await ins('expenses', { amount: a, category_id: f.cat || null, note: text || null, source: 'voice' });
+    const cat = (sheetEl()._cats || []).find(c => c.id === f.cat);
+    toast(`اتسجل مصروف ${n(a)} جنيه${cat ? ' · ' + cat.name : ''}`, async () => { try { await del('expenses', r.id); refresh(); toast('اتشال'); } catch (e) { fail(e); } });
+  } else {
+    const a = parseFloat(f.in_amount); if (!a) { toast('اكتب المبلغ'); return false; }
+    const r = await ins('incomes', { amount: a, source: text || 'دخل' });
+    toast(`اتسجل دخل ${n(a)} جنيه`, async () => { try { await del('incomes', r.id); refresh(); toast('اتشال'); } catch (e) { fail(e); } });
+  }
+  return true;
 }
 export const captureActions = {
-  'cap-type'(el) {
-    el.parentElement.querySelectorAll('button').forEach(b => b.classList.toggle('on', b === el));
-    sheetEl().querySelectorAll('[data-extra]').forEach(x => (x.hidden = x.dataset.extra !== el.dataset.v));
-  },
+  'cap-type'(el) { setType(el.dataset.v); },
+  'cap-text'() { readMoney(); },
   'cap-mic'(el) {
     const ta = sheetEl().querySelector('[name=text]');
     if (rec) { rec.stop(); return; }
     const pre = ta.value.trim() ? ta.value.trim() + ' ' : '';
-    rec = dictate(t => (ta.value = pre + t), live => {
+    rec = dictate(t => { ta.value = pre + t; readMoney(); }, async live => {
       el.classList.toggle('live', live);
       const h = document.getElementById('cap-hint');
       if (h) h.textContent = live ? 'بسمعك… دوس على المايك تاني لما تخلص' : 'تمام، راجع الكلام واحفظ';
-      if (!live) rec = null;
+      if (live) return;
+      rec = null;
+      // قلت مبلغ؟ بيتسجل على طول في فلوسي، ولو غلط دوس "تراجع"
+      const m = readMoney();
+      if (m && sheetEl().querySelector('[name=text]')) {
+        try { if (await saveMoney(m.type, formOf(sheetEl()), m.note || ta.value.trim())) { closeSheet(); refresh(); } } catch (e) { fail(e); }
+      }
     });
     if (!rec) { ta.focus(); toast('دوس على مايك الكيبورد واتكلم'); }
   },
@@ -198,8 +315,10 @@ export const captureActions = {
       if (type === 'idea') { if (!text) return toast('اكتب الفكرة'); await ins('ideas', { title: text.split('\n')[0].slice(0, 120), body: text.length > 120 ? text : null, source: src }); toast('اتسجلت في الأفكار'); }
       if (type === 'problem') { if (!text) return toast('اكتب المشكلة'); await ins('problems', { title: text }); toast('اتسجلت في سجل المشاكل'); }
       if (type === 'note') { if (!text || !f.member) return toast('اكتب رأيك واختار الفرد'); await ins('member_notes', { member_id: f.member, text }); toast('رأيك اتسجل'); }
-      if (type === 'expense') { const a = parseFloat(f.amount); if (!a) return toast('اكتب المبلغ'); await ins('expenses', { amount: a, category_id: f.cat || null, note: text || null, source: src }); toast('المصروف اتسجل'); }
-      if (type === 'income') { const a = parseFloat(f.in_amount); if (!a) return toast('اكتب المبلغ'); await ins('incomes', { amount: a, source: text || 'دخل' }); toast('الدخل اتسجل'); }
+      if (type === 'expense' || type === 'income') {
+        const m = parseMoney(text, s._cats || []);
+        if (!(await saveMoney(type, f, (m && m.note) || text))) return;
+      }
       closeSheet(); refresh();
     } catch (e) { fail(e); }
   },
