@@ -12,10 +12,43 @@ const pills = (group, items, cur) => `<div class="pills" data-group="${group}">$
 const picked = group => sheetEl().querySelector(`[data-group=${group}] .on`)?.dataset.v;
 
 // ---------------- الكورسات ----------------
+// مواعيد الكورس: كل ميعاد = يوم في الأسبوع + ساعة. وCloudflare بيبعتلك إشعار قبل كل ميعاد
+const BEFORE = [[0, 'في الميعاد'], [15, 'قبلها بربع ساعة'], [30, 'قبلها بنص ساعة'], [60, 'قبلها بساعة']];
+const WEEK = [6, 0, 1, 2, 3, 4, 5];   // الأسبوع بيبدأ السبت
+const fmtTime = t => { const [h, m] = t.split(':').map(Number); return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'ص' : 'م'}`; };
+const sortSlots = L => [...L].sort((a, b) => WEEK.indexOf(a.day) - WEEK.indexOf(b.day) || a.time.localeCompare(b.time));
+const slotsText = L => sortSlots(L).map(s => `${DAYNAME[s.day]} ${fmtTime(s.time)}`).join(' · ');
+// الميعاد الجاي: "النهاردة 8:00 م" / "بكرة …" / "السبت …"
+function nextSlot(c) {
+  const L = c.schedule || []; if (!L.length || c.status !== 'active') return null;
+  if (c.schedule_until && c.schedule_until < today()) return null;
+  const now = new Date(), dow = now.getDay(), mins = now.getHours() * 60 + now.getMinutes();
+  for (let d = 0; d < 8; d++) {
+    const day = (dow + d) % 7;
+    const s = L.filter(x => x.day === day && (d > 0 || toMin(x.time) > mins)).sort((a, b) => a.time.localeCompare(b.time))[0];
+    if (s) return { d, text: `${d === 0 ? 'النهاردة' : d === 1 ? 'بكرة' : DAYNAME[day]} ${fmtTime(s.time)}` };
+  }
+  return null;
+}
+const toMin = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+const slotRow = (s = {}) => `<div class="row" data-slot style="gap:6px">
+  <select class="inp" data-k="day" style="flex:1.2">${opts(WEEK.map(d => [d, DAYNAME[d]]), s.day ?? 6)}</select>
+  <input class="inp" type="time" data-k="time" value="${s.time || '20:00'}" style="flex:1">
+  <button type="button" class="star" data-act="slot-del" aria-label="شيل الميعاد">${ic('x', 18)}</button></div>`;
+
 function courseSheet(c = {}) {
+  const slots = sortSlots(c.schedule || []);
   openSheet(c.id ? 'الكورس' : 'كورس جديد', `
     <label class="field"><span>اسم الكورس</span><input name="title" value="${esc(c.title)}" ${c.id ? '' : 'autofocus'} placeholder="مثلًا: الإدارة المالية"></label>
     <div class="field"><span>الحالة</span>${pills('cstat', CSTAT, c.status || 'active')}</div>
+    <div class="card stack" style="gap:10px;padding:12px 14px">
+      <div class="row" style="gap:6px;font-weight:600">${ic('bell', 18)}مواعيد الكورس</div>
+      <div class="stack" style="gap:8px" id="slots">${slots.map(slotRow).join('')}</div>
+      <button type="button" class="btn dash sm" data-act="slot-add">+ ميعاد (يوم وساعة)</button>
+      <div class="field"><span>ذكّرني</span>${pills('before', BEFORE, c.remind_before ?? 15)}</div>
+      <label class="field"><span>المواعيد شغالة لحد (اختياري)</span><input type="date" name="schedule_until" value="${c.schedule_until || ''}"></label>
+      <p class="mut" style="margin:0">التذكير بيوصلك إشعار حتى لو التطبيق مقفول، طول ما الكورس "شغال فيه".</p>
+    </div>
     <div class="grid2"><label class="field"><span>عدد الدروس</span><input name="lessons_total" inputmode="numeric" value="${c.lessons_total ?? ''}"></label>
     <label class="field"><span>خلصت كام</span><div class="row"><input name="lessons_done" inputmode="numeric" value="${c.lessons_done ?? 0}"><button type="button" class="btn sm" data-act="lesson-plus" aria-label="درس كمان">+1</button></div></label></div>
     <label class="field"><span>أهم حاجة اتعلمتها</span><textarea name="learned" rows="3">${esc(c.learned)}</textarea></label>
@@ -106,11 +139,14 @@ export default {
         fab: { label: 'كورس', act: 'course-new' },
         html: `<div class="stack"><div class="seg">${CSTAT.map(([k, l]) => `<button class="${st.course === k ? 'on' : ''}" data-act="ctab" data-v="${k}">${l} <span class="num">${all.filter(c => c.status === k).length}</span></button>`).join('')}</div>
           ${L.length ? L.map(c => { const p = c.lessons_total ? c.lessons_done / c.lessons_total * 100 : (c.status === 'done' ? 100 : 0);
+            const nx = nextSlot(c);
             return `<button class="card stack" style="gap:8px" data-act="course-open" data-id="${c.id}"><div class="between"><span class="title">${esc(c.title)}</span><span class="mut">${c.lessons_total ? `${c.lessons_done} من ${c.lessons_total} دروس` : ''}</span></div>
+              ${nx ? `<div class="row" style="gap:6px;font-size:14px">${ic('bell', 16)}<span>الجاي: <b>${nx.text}</b></span>${nx.d === 0 ? '<span class="tag amb">النهاردة</span>' : ''}</div>` : ''}
+              ${c.status === 'active' && (c.schedule || []).length ? `<div class="mut">${slotsText(c.schedule)}</div>` : ''}
               ${c.status !== 'wishlist' ? bat(p, c.status === 'done' ? 'done' : 'run') : ''}
               ${c.learned ? `<div class="mut" style="line-height:1.6">اتعلمت: <span style="color:var(--ink)">${esc(c.learned)}</span></div>` : ''}
               ${c.applied_in ? `<span class="chip" style="align-self:flex-start">${ic('link', 13)}طبقته في: ${esc(c.applied_in)}</span>` : (c.status === 'done' ? '<span class="late" style="font-size:13px">لسه ما اتطبقش في الشغل</span>' : '')}</button>`; }).join('')
-            : empty(st.course === 'active' ? 'سجّل الكورسات اللي بتاخدها، وكام درس خلصت، وطبقت إيه منها.' : 'مفيش حاجة هنا لسه.')}</div>`,
+            : empty(st.course === 'active' ? 'سجّل الكورسات اللي بتاخدها، ومواعيدها، وكام درس خلصت، وطبقت إيه منها.' : 'مفيش حاجة هنا لسه.')}</div>`,
       };
     },
     actions: { ctab(el) { st.course = el.dataset.v; doRefresh(); }, 'course-new': () => courseSheet(), async 'course-open'(el) { courseSheet(await one('courses', el.dataset.id)); } },
@@ -180,12 +216,26 @@ export default {
 const num = v => v === '' || v == null ? null : Number(v);
 export const moreGlobal = {
   'lesson-plus'() { const i = sheetEl().querySelector('[name=lessons_done]'); i.value = (parseInt(i.value) || 0) + 1; },
+  'slot-add'() {
+    const box = sheetEl().querySelector('#slots');
+    const last = box.querySelector('[data-slot]:last-child [data-k=time]')?.value;   // الميعاد الجديد بياخد نفس ساعة اللي قبله
+    box.insertAdjacentHTML('beforeend', slotRow({ day: 6, time: last || '20:00' }));
+  },
+  'slot-del'(el) { el.closest('[data-slot]').remove(); },
   async 'course-save'(el) {
-    const f = formOf(sheetEl()); if (!f.title) return toast('اكتب اسم الكورس');
+    const s = sheetEl(); const f = formOf(s); if (!f.title) return toast('اكتب اسم الكورس');
     let status = picked('cstat') || 'active'; const tot = num(f.lessons_total), done = num(f.lessons_done) || 0;
     if (tot && done >= tot && status === 'active') { status = 'done'; toast('مبروك! الكورس خلص. متنساش تكتب طبقته في إيه'); }
-    const row = { title: f.title, status, lessons_total: tot, lessons_done: done, learned: f.learned || null, applied_in: f.applied_in || null };
-    try { if (el.dataset.id) await upd('courses', el.dataset.id, row); else await ins('courses', row); closeSheet(); doRefresh(); } catch (e) { fail(e); }
+    const seen = new Set();
+    const schedule = sortSlots([...s.querySelectorAll('[data-slot]')].map(r => ({ day: Number(r.querySelector('[data-k=day]').value), time: r.querySelector('[data-k=time]').value }))
+      .filter(x => x.time && !seen.has(x.day + x.time) && seen.add(x.day + x.time)));
+    const row = { title: f.title, status, lessons_total: tot, lessons_done: done, learned: f.learned || null, applied_in: f.applied_in || null,
+      schedule, remind_before: Number(picked('before') ?? 15), schedule_until: f.schedule_until || null };
+    try {
+      if (el.dataset.id) await upd('courses', el.dataset.id, row); else await ins('courses', row);
+      closeSheet(); if (schedule.length && status === 'active' && !(tot && done >= tot)) toast(`هفكّرك قبل كل ميعاد (${schedule.length} ${schedule.length === 1 ? 'ميعاد' : schedule.length === 2 ? 'ميعادين' : 'مواعيد'} في الأسبوع)`);
+      doRefresh();
+    } catch (e) { fail(e); }
   },
   async 'course-archive'(el) { closeSheet(); await archiveWithUndo('courses', el.dataset.id, 'الكورس اتنقل للأرشيف'); },
   async 'unit-save'(el) {

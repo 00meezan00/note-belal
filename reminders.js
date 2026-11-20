@@ -31,8 +31,9 @@ export default {
 async function runReminders(env) {
   const profiles = await db(env, 'profiles?select=user_id,display_name,timezone,morning_reminder,morning_enabled,evening_reminder,evening_enabled');
   for (const p of profiles) {
-    const { date, minutes } = localNow(p.timezone || 'Africa/Cairo');
-    const due = t => { if (!t) return false; const [h, m] = t.split(':').map(Number); const tm = h * 60 + m; return tm <= minutes && tm > minutes - 15; };
+    const { date, minutes, dow } = localNow(p.timezone || 'Africa/Cairo');
+    const dueMin = tm => tm <= minutes && tm > minutes - 15;
+    const due = t => { if (!t) return false; const [h, m] = t.split(':').map(Number); return dueMin(h * 60 + m); };
     const uid = p.user_id, name = p.display_name || 'بلال';
     const open = await db(env, `tasks?select=id,title,top3_on,reminder_time,due_on&user_id=eq.${uid}&done=eq.false&archived_at=is.null&due_on=lte.${date}`);
 
@@ -58,14 +59,34 @@ async function runReminders(env) {
         await sendToUser(env, uid, { title: 'تذكير', body: t.title, url: './#/today' });
       }
     }
+
+    // مواعيد الكورسات: كل ميعاد = يوم في الأسبوع + ساعة، والتذكير قبله بالوقت اللي اخترته
+    const courses = await db(env, `courses?select=id,title,schedule,remind_before,schedule_until&user_id=eq.${uid}&status=eq.active&archived_at=is.null`).catch(() => []);
+    for (const c of courses) {
+      if (c.schedule_until && c.schedule_until < date) continue;
+      const before = Number(c.remind_before) || 0;
+      for (const s of Array.isArray(c.schedule) ? c.schedule : []) {
+        if (!s || !s.time) continue;
+        const [h, m] = s.time.split(':').map(Number);
+        let tm = h * 60 + m - before, day = Number(s.day);
+        if (tm < 0) { tm += 1440; day = (day + 6) % 7; }   // كورس بعد نص الليل بشوية: التذكير في اليوم اللي قبله
+        if (day !== dow || !dueMin(tm)) continue;
+        if (await claim(env, uid, `course:${c.id}:${date}:${s.day}:${s.time}`)) {
+          await sendToUser(env, uid, { title: 'عندك كورس', body: `${c.title} — ${before ? `كمان ${beforeWord(before)} (الساعة ${fmtTime(s.time)})` : `دلوقتي، الساعة ${fmtTime(s.time)}`}`, url: './#/courses' });
+        }
+      }
+    }
   }
 }
 
 const tasksWord = n => n === 1 ? 'مهمة واحدة' : n === 2 ? 'مهمتين' : n <= 10 ? `${n} مهام` : `${n} مهمة`;
+const beforeWord = m => m === 15 ? 'ربع ساعة' : m === 30 ? 'نص ساعة' : m === 60 ? 'ساعة' : `${m} دقيقة`;
+const fmtTime = t => { const [h, m] = t.split(':').map(Number); return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'ص' : 'م'}`; };
 
 function localNow(tz) {
   const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date()).map(x => [x.type, x.value]));
-  return { date: `${parts.year}-${parts.month}-${parts.day}`, minutes: Number(parts.hour) * 60 + Number(parts.minute) };
+  const date = `${parts.year}-${parts.month}-${parts.day}`;
+  return { date, minutes: Number(parts.hour) * 60 + Number(parts.minute), dow: new Date(date + 'T12:00:00Z').getUTCDay() };
 }
 
 // بيسجل إن التذكير ده اتبعت. لو كان متسجل قبل كده بيرجع false، فمفيش إشعار بيتكرر
