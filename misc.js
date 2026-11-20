@@ -145,6 +145,8 @@ export default {
           if (perm !== 'granted') { toast(perm === 'denied' ? 'الإشعارات اتقفلت. افتحها من إعدادات الآيفون ← الإشعارات ← نوتة بلال' : 'لازم توافق على الإشعارات'); return doRefresh(); }
           const reg = await navigator.serviceWorker.ready;
           let sub = await reg.pushManager.getSubscription();
+          // لو الاشتراك القديم معمول بمفتاح تاني، بنلغيه ونعمل واحد جديد بالمفتاح اللي في config.js
+          if (sub && !sameKey(sub, VAPID_PUBLIC_KEY)) { await sb.from('push_subscriptions').delete().eq('endpoint', sub.endpoint); await sub.unsubscribe(); sub = null; }
           if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64u(VAPID_PUBLIC_KEY) });
           await saveSub(sub);
           toast('الإشعارات اتفعلت. دوس "جرّب"'); doRefresh();
@@ -157,6 +159,7 @@ export default {
           const reg = await navigator.serviceWorker.ready;
           const sub = await reg.pushManager.getSubscription();
           if (!sub) { toast('الإشعارات مش متفعلة. دوس "فعّل"'); return doRefresh(); }
+          if (!sameKey(sub, VAPID_PUBLIC_KEY)) { await sub.unsubscribe(); toast('المفتاح اتغير. دوس "فعّل" تاني'); return doRefresh(); }
           await saveSub(sub);
           const { data } = await sb.auth.getSession();
           let r;
@@ -192,6 +195,13 @@ function b64u(s) { const p = '='.repeat((4 - s.length % 4) % 4); const b = atob(
 function alertBox(title, msg) {
   openSheet(title, `<div class="card" style="direction:ltr;text-align:left;font-size:13px;white-space:pre-wrap;word-break:break-word">${esc(msg)}</div>
     <div class="btns"><button class="btn pri" data-act="close-sheet">تمام</button></div>`);
+}
+
+// بيشوف الاشتراك ده معمول بنفس المفتاح العام اللي في config.js ولا لأ
+function sameKey(sub, key) {
+  const k = sub.options && sub.options.applicationServerKey; if (!k) return true;
+  const a = new Uint8Array(k), b = b64u(key);
+  return a.length === b.length && a.every((x, i) => x === b[i]);
 }
 
 // بيحفظ اشتراك الموبايل ده في Supabase عشان الـ Worker يعرف يبعتله
