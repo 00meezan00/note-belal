@@ -9,8 +9,8 @@ export const sb = configured
   ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false } })
   : null;
 
-const TABLES = ['profiles','company','company_metrics','company_log','ideas','goals','plan_steps','recurring_tasks','tasks','links','problems','role_criteria','team_members','member_ratings','member_notes','weekly_reviews','courses','org_units','sops','job_roles','positions','candidates','projects','project_clients','project_devs','project_dev_notes','wallets','assets','investments','investment_returns','debts','debt_payments','commitments','budget_categories','expenses','incomes','financial_goals','net_worth_snapshots','push_subscriptions'];
-const ARCH = new Set(['company_metrics','company_log','ideas','goals','recurring_tasks','tasks','problems','team_members','courses','sops','positions','candidates','projects','project_clients','project_devs','wallets','assets','investments','debts','commitments','budget_categories','expenses','incomes','financial_goals']);
+const TABLES = ['profiles','company','company_metrics','company_log','ideas','goals','plan_steps','recurring_tasks','tasks','links','problems','role_criteria','team_members','member_ratings','member_notes','weekly_reviews','courses','org_units','sops','job_roles','positions','candidates','projects','project_clients','project_devs','project_dev_notes','wallets','assets','investments','investment_returns','debts','debt_payments','commitments','budget_categories','expenses','incomes','financial_goals','net_worth_snapshots','push_subscriptions','day_logs','day_plans'];
+const ARCH = new Set(['company_metrics','company_log','ideas','goals','recurring_tasks','tasks','problems','team_members','courses','sops','positions','candidates','projects','project_clients','project_devs','wallets','assets','investments','debts','commitments','budget_categories','expenses','incomes','financial_goals','day_logs']);
 const KEY = { profiles: 'user_id', company: 'user_id' };
 const NO_UPDATED = new Set(['links','member_notes','project_dev_notes','investment_returns','debt_payments','expenses','incomes','net_worth_snapshots','push_subscriptions','role_criteria','budget_categories']);
 const todayStr = () => { const d = new Date(); return new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10); };
@@ -26,6 +26,7 @@ const DEFAULTS = {
   project_dev_notes: () => ({ noted_on: todayStr() }), wallets: () => ({ kind: 'cash', balance: 0 }), investment_returns: () => ({ received_on: todayStr() }),
   debt_payments: () => ({ paid_on: todayStr() }), commitments: () => ({ active: true }), budget_categories: () => ({ sort: 0 }),
   expenses: () => ({ spent_on: todayStr(), source: 'manual' }), incomes: () => ({ received_on: todayStr(), expected: false }), financial_goals: () => ({ saved: 0 }),
+  day_logs: () => ({ on_date: todayStr(), kind: 'co' }),
 };
 
 // ---------------- التخزين على الجهاز (IndexedDB) ----------------
@@ -310,6 +311,8 @@ export async function pull(force = false) {
       let rows = [], from = 0;
       for (;;) {
         const { data, error } = await sb.from(t).select('*').range(from, from + 999);
+        // جدول لسه متعملش في Supabase (نسيت ملف SQL)؟ منوقفش المزامنة كلها عشانه
+        if (error && /PGRST205|42P01|does not exist|Could not find the table/i.test(`${error.code} ${error.message}`)) return [t, (L[t] || []).filter(r => !r._tmp)];
         if (error) throw error;
         rows = rows.concat(data); if (data.length < 1000) break; from += 1000;
       }

@@ -7,9 +7,11 @@ export default {
   company: {
     dock: 'company',
     async render() {
-      const [c, metrics, log, team, done] = await Promise.all([
+      const [c, metrics, log, team, done, active, prog] = await Promise.all([
         single('company'), list('company_metrics', { order: 'sort' }), list('company_log', { order: 'happened_on', asc: false, limit: 120 }),
-        list('team_members', { eq: { active: true } }), list('goals', { eq: { status: 'done' } })]);
+        list('team_members', { eq: { active: true } }), list('goals', { eq: { status: 'done' } }), list('goals', { eq: { status: 'active' } }), list('v_goal_progress')]);
+      const P = Object.fromEntries(prog.map(p => [p.id, p.progress]));
+      const avg = active.length ? Math.round(active.reduce((s, g) => s + (P[g.id] || 0), 0) / active.length) : 0;
       let cur = '', tl = '';
       log.forEach(x => {
         const m = x.happened_on.slice(0, 7);
@@ -21,6 +23,7 @@ export default {
       return {
         title: c?.name || 'الشركة', sub: c?.branches || '',
         html: `<div class="stack">
+          <a class="card row" href="#/progress" style="gap:12px;background:var(--dock);border-color:var(--dock);color:#fff">${ic('chart', 24)}<div style="flex:1;line-height:1.45"><div style="font-weight:600">تقدّم الشركة</div><div style="font-size:13px;color:#C9D2D9">${active.length ? `ماشيين ناحية أهدافنا <b class="num" style="color:#fff">${avg}%</b> · ${active.length} هدف شغال` : 'روحنا فين وقدامنا قد إيه'}</div></div>${ic('chev', 18)}</a>
           <div class="card"><div class="between"><span class="sec" style="margin:0">الوضع الحالي</span><button class="btn sm" data-act="co-edit">تعديل</button></div>
             <div style="margin-top:6px;line-height:1.75;white-space:pre-wrap">${c?.status_text ? esc(c.status_text) : '<span class="mut">اكتب صورة الشركة النهاردة: الأجهزة، العملاء، الفريق.</span>'}</div></div>
           <div class="between"><span class="sec">المؤشرات</span><button class="btn sm" data-act="metric-new">${ic('plus', 16)}مؤشر</button></div>

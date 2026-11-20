@@ -2,9 +2,10 @@
 import { list, single, ins, upsert } from './db.js';
 import { esc, ic, fd, fMonth, today, addDays, weekStart, monthStart, n, empty, toast, fail, formOf, LOC } from './ui.js';
 import { doRefresh, openTask } from './comps.js';
+import { companyProgress, progressReport } from './insights.js';
 
 const st = { month: today().slice(0, 7), day: today(), rep: 'month', from: '', to: '' };
-const SECTIONS = [['status', 'الوضع الحالي ومؤشرات الشركة'], ['log', 'الإنجازات وسجل التطورات'], ['goals', 'الأهداف الجارية'], ['team', 'تقييم التيم'], ['problems', 'المشاكل والحلول'], ['plan', 'الخطة الجاية']];
+const SECTIONS = [['status', 'الوضع الحالي ومؤشرات الشركة'], ['progress', 'تقدّم الشركة نحو الأهداف (بالنسب)'], ['log', 'الإنجازات وسجل التطورات'], ['goals', 'الأهداف الجارية'], ['team', 'تقييم التيم'], ['problems', 'المشاكل والحلول'], ['plan', 'الخطة الجاية']];
 const secPrefs = () => { try { return JSON.parse(localStorage.getItem('nota.repsec')) || {}; } catch (e) { return {}; } };
 const secOn = k => secPrefs()[k] !== false;
 
@@ -29,6 +30,7 @@ async function buildReport() {
   const S = []; const b = '• ';
   S.push({ h: null, lines: [`تقرير تطوير الأعمال — ${co?.name || ''}`, `الفترة: من ${fd(from)} إلى ${fd(to)}`] });
   if (secOn('status')) S.push({ h: 'الوضع الحالي للشركة', lines: [...(co?.status_text ? [co.status_text] : []), ...metrics.map(m => b + `${m.label}: ${n(m.value)}${m.unit ? ' ' + m.unit : ''}`), b + `عدد أفراد التيم: ${members.length}`] });
+  if (secOn('progress')) { const pr = progressReport(await companyProgress()); S.push({ h: 'تقدّم الشركة نحو الأهداف', lines: pr.lines, svg: pr.svg }); }
   if (secOn('log')) { const dn = goals.filter(g => g.status === 'done' && inR(g.done_on)).length; S.push({ h: `الإنجازات والتطورات (${dn} هدف اتحقق)`, lines: log.length ? log.map(x => b + `${fd(x.happened_on)}: ${x.text}`) : ['لا يوجد في الفترة دي.'] }); }
   if (secOn('goals')) { const act = goals.filter(g => g.status === 'active'); S.push({ h: 'الأهداف الجارية', lines: act.length ? act.map(g => b + `${g.title} — ${P[g.id] || 0}%${g.due_on ? ' — الموعد ' + fd(g.due_on) + (g.due_on < today() ? ' (متأخر)' : '') : ''}`) : ['لا يوجد.'] }); }
   if (secOn('team')) S.push({ h: `تقييم التيم — ${fMonth(to)}`, lines: members.length ? members.map(m => { const r = R[m.id]; const cr = C[m.role] || Object.keys(r?.scores || {}); const sc = r ? cr.filter(c => r.scores?.[c]).map(c => `${c} ${r.scores[c]}/5`).join('، ') : ''; return b + `${m.name} (${m.role}): ${sc || 'لم يُقيَّم'}${r?.comment ? ' — ' + r.comment : ''}`; }) : ['لا يوجد.'] });
@@ -39,7 +41,7 @@ async function buildReport() {
     const lines = [...nxt.map(g => b + `${g.title} — قبل ${fd(g.due_on)}`), ...ideas.map(i => b + `مقترح: ${i.title}`), ...positions.map(p => b + `توظيف: ${p.title}`)];
     S.push({ h: 'الخطة الجاية', lines: lines.length ? lines : ['لا يوجد.'] }); }
   const text = S.map(s => (s.h ? s.h + '\n' : '') + s.lines.join('\n')).join('\n\n');
-  const html = S.map((s, i) => i === 0 ? `<h1>${esc(s.lines[0])}</h1><p class="per">${esc(s.lines[1])}</p>` : `<h2>${esc(s.h)}</h2>${s.lines.map(l => `<p>${esc(l)}</p>`).join('')}`).join('');
+  const html = S.map((s, i) => i === 0 ? `<h1>${esc(s.lines[0])}</h1><p class="per">${esc(s.lines[1])}</p>` : `<h2>${esc(s.h)}</h2>${s.lines.map(l => `<p>${esc(l)}</p>`).join('')}${s.svg || ''}`).join('');
   return { text, html, from, to };
 }
 
@@ -128,15 +130,16 @@ export default {
       return {
         title: 'تقرير للمالك', sub: 'إنت بتختار الفترة والمحتوى', back: '#/today',
         html: `<div class="stack" style="padding-bottom:20px">
+          <a class="card row" href="#/progress" style="gap:12px">${ic('chart', 22)}<div style="flex:1;line-height:1.5"><div style="font-weight:600">تقدّم الشركة بالرسومات</div><div class="mut">روحنا فين، قدامنا قد إيه، ومشاكلنا</div></div>${ic('chev', 18)}</a>
           <div class="pills">${[['week', 'آخر 7 أيام'], ['month', 'الشهر ده'], ['last', 'الشهر اللي فات'], ['custom', 'من يوم لـ يوم']].map(([k, l]) => `<button class="${st.rep === k ? 'on' : ''}" data-act="rep-period" data-v="${k}">${l}</button>`).join('')}</div>
           ${st.rep === 'custom' ? `<div class="grid2"><label class="field"><span>من</span><input type="date" value="${st.from}" data-change="rep-from"></label><label class="field"><span>إلى</span><input type="date" value="${st.to}" data-change="rep-to"></label></div>` : `<div class="mut">${fd(r.from)} – ${fd(r.to)}</div>`}
           <div class="card list" style="padding:4px 14px"><b style="font-weight:600;display:block;padding:8px 0 4px">يحتوي على</b>
             ${SECTIONS.map(([k, l]) => `<div class="row" style="padding:7px 0"><span style="flex:1;font-weight:500">${l}</span><button class="switch${secOn(k) ? ' on' : ''}" role="switch" aria-checked="${secOn(k)}" data-act="rep-sec" data-k="${k}" aria-label="${l}"></button></div>`).join('')}
-            ${['فلوسي', 'مشاريعي', 'رأيك اليومي في التيم'].map(l => `<div class="row mut" style="padding:9px 0">${ic('archive', 18)}<span style="flex:1">${l}</span><span style="font-size:12px">مش بيدخل</span></div>`).join('')}</div>
+            ${['فلوسي', 'مشاريعي', 'رأيك اليومي في التيم', 'يومي (وقتك الشخصي)'].map(l => `<div class="row mut" style="padding:9px 0">${ic('archive', 18)}<span style="flex:1">${l}</span><span style="font-size:12px">مش بيدخل</span></div>`).join('')}</div>
           <pre class="card" id="rep-text" style="white-space:pre-wrap;font:14px/1.8 'Readex Pro',system-ui,sans-serif;margin:0;max-height:50vh;overflow:auto">${esc(r.text)}</pre>
           <div class="btns"><a class="btn amb" href="https://wa.me/?text=${encodeURIComponent(r.text)}" target="_blank" rel="noopener">ابعته على الواتساب</a></div>
           <div class="btns"><button class="btn" data-act="rep-copy">انسخ</button><button class="btn" data-act="rep-pdf">ملف PDF</button></div>
-          <p class="mut" style="margin:0">PDF: هتفتحلك صفحة الطباعة، اختار منها مشاركة أو "حفظ في الملفات".</p>
+          <p class="mut" style="margin:0">PDF: هتفتحلك صفحة الطباعة، اختار منها مشاركة أو "حفظ في الملفات". وفيه رسمة لتقدم كل هدف.</p>
           <div id="print-area">${r.html}</div>
         </div>`,
       };
