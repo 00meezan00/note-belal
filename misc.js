@@ -136,6 +136,38 @@ export default {
       async 'pref-time'(el) { try { const s = await auth.session(); await upsert('profiles', { user_id: s.user.id, [el.dataset.k]: el.value }, 'user_id'); toast('اتحفظ'); } catch (e) { fail(e); } },
       async crit(el) { const arr = el.value.split(/[،,]/).map(s => s.trim()).filter(Boolean); if (!arr.length) return; try { await upd('role_criteria', el.dataset.id, { criteria: arr }); toast('اتحفظ'); } catch (e) { fail(e); } },
       async 'crit-add'(form) { const r = form.querySelector('[name=role]').value.trim(); if (!r) return; try { await ins('role_criteria', { role: r, criteria: ['الالتزام'] }); doRefresh(); } catch (e) { fail(e); } },
+      // زرار "فعّل": بيطلب الإذن من الآيفون، ويعمل اشتراك، ويحفظه في Supabase
+      async 'push-enable'(el) {
+        if (!VAPID_PUBLIC_KEY) return toast('مفتاح الإشعارات مش موجود في config.js');
+        el.disabled = true;
+        try {
+          const perm = await Notification.requestPermission();
+          if (perm !== 'granted') { toast(perm === 'denied' ? 'الإشعارات اتقفلت. افتحها من إعدادات الآيفون ← الإشعارات ← نوتة بلال' : 'لازم توافق على الإشعارات'); return doRefresh(); }
+          const reg = await navigator.serviceWorker.ready;
+          let sub = await reg.pushManager.getSubscription();
+          if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64u(VAPID_PUBLIC_KEY) });
+          await saveSub(sub);
+          toast('الإشعارات اتفعلت. دوس "جرّب"'); doRefresh();
+        } catch (e) { toast(e.message || 'ما قدرتش أفعّل الإشعارات'); } finally { el.disabled = false; }
+      },
+      // زرار "جرّب": بيطلب من الـ Worker يبعت إشعار تجربة
+      async 'push-test'(el) {
+        el.disabled = true;
+        try {
+          const reg = await navigator.serviceWorker.ready;
+          const sub = await reg.pushManager.getSubscription();
+          if (!sub) { toast('الإشعارات مش متفعلة. دوس "فعّل"'); return doRefresh(); }
+          await saveSub(sub);
+          const { data } = await sb.auth.getSession();
+          let r;
+          try { r = await fetch(WORKER_URL.replace(/\/$/, '') + '/test', { method: 'POST', headers: { Authorization: `Bearer ${data.session.access_token}` } }); }
+          catch (_) { return toast('ما قدرتش أوصل للـ Worker. اتأكد من WORKER_URL في config.js'); }
+          if (r.ok) toast('اتبعت. هيوصلك إشعار كمان ثواني');
+          else if (r.status === 404) toast('الإشعار ما وصلش. اتأكد إن VAPID_PUBLIC و VAPID_PRIVATE في Cloudflare صح');
+          else if (r.status === 401) toast('الـ Worker مش عارف حسابك. اتأكد من SUPABASE_URL و SUPABASE_SERVICE_KEY في Cloudflare');
+          else toast(`الـ Worker رد بخطأ ${r.status}. اتأكد من المتغيرات الخمسة في Cloudflare`);
+        } catch (e) { toast(e.message || 'حصل خطأ'); } finally { el.disabled = false; }
+      },
       async backup() {
         try {
           const out = { app: 'nota-bilal', exported_at: new Date().toISOString(), ...exportAll() };
@@ -155,6 +187,17 @@ export default {
 };
 
 function b64u(s) { const p = '='.repeat((4 - s.length % 4) % 4); const b = atob((s + p).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from(b, c => c.charCodeAt(0)); }
+
+// بيحفظ اشتراك الموبايل ده في Supabase عشان الـ Worker يعرف يبعتله
+async function saveSub(sub) {
+  const j = sub.toJSON();
+  const { data } = await sb.auth.getSession();
+  const uid = data?.session?.user?.id; if (!uid) throw new Error('سجّل دخول الأول');
+  await sb.from('push_subscriptions').delete().eq('endpoint', j.endpoint);
+  const { error } = await sb.from('push_subscriptions').insert({ user_id: uid, endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth });
+  if (error) throw new Error(/does not exist|schema cache|42P01/.test(error.message + error.code) ? 'جدول push_subscriptions مش موجود. شغّل supabase-push.sql في Supabase الأول' : 'Supabase: ' + error.message);
+}
+
 async function pushStatus() {
   if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) return 'unsupported';
   if (Notification.permission === 'denied') return 'denied';
