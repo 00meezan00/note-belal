@@ -165,7 +165,7 @@ export default {
           let r;
           try { r = await fetch(WORKER_URL.replace(/\/$/, '') + '/test', { method: 'POST', headers: { Authorization: `Bearer ${data.session.access_token}` } }); }
           catch (_) { return alertBox('ما قدرتش أوصل للـ Worker', 'الأغلب إن الـ Worker القديم لسه على Cloudflare. حط كود reminders.js الجديد فيه ودوس Deploy.'); }
-          if (r.ok) return toast('اتبعت. هيوصلك إشعار كمان ثواني');
+          if (r.ok) { const res = await r.json().catch(() => ({})); return res.check ? alertBox('إشعار التجربة اتبعت', checkText(res.check), true) : toast('اتبعت. هيوصلك إشعار كمان ثواني'); }
           const why = await r.json().then(x => x.error).catch(() => '');
           if (r.status === 401) toast('الـ Worker مش عارف حسابك. اتأكد من SUPABASE_URL و SUPABASE_SERVICE_KEY في Cloudflare');
           else alertBox(`الإشعار ما وصلش (${r.status})`, why || 'مفيش تفاصيل');
@@ -192,8 +192,21 @@ export default {
 function b64u(s) { const p = '='.repeat((4 - s.length % 4) % 4); const b = atob((s + p).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from(b, c => c.charCodeAt(0)); }
 
 // رسالة فيها السبب بالتفصيل، بتفضل ظاهرة لحد ما تقفلها (عشان تقدر تصوّرها)
-function alertBox(title, msg) {
-  openSheet(title, `<div class="card" style="direction:ltr;text-align:left;font-size:13px;white-space:pre-wrap;word-break:break-word">${esc(msg)}</div>
+// نتيجة الفحص اللي بيرجعها الـ Worker: هو بيصحى لوحده؟ وإيه مهام النهاردة اللي ليها تذكير؟
+function checkText(c) {
+  const L = ['✓ إشعار التجربة اتبعت، يعني الموبايل والمفاتيح مظبوطين.'];
+  const ago = c.lastRun ? Math.round((Date.now() - Date.parse(c.lastRun)) / 60000) : null;
+  if (ago === null) L.push('✗ الـ Worker عمره ما صحي لوحده. عشان كده تذكيرات المهام مش بتوصل.', 'الحل: Cloudflare ← Workers ← nota-reminders ← Settings ← Trigger Events ← Add ← Cron Triggers ← اكتب */5 * * * * ← Add.');
+  else if (ago > 15) L.push(`✗ آخر مرة الـ Worker صحي لوحده كان من ${ago} دقيقة، وده كتير (المفروض كل 5 دقايق). اتأكد من الـ Cron Trigger في Cloudflare.`);
+  else L.push(`✓ الـ Worker بيصحى لوحده (آخر مرة من ${ago < 1 ? 'أقل من دقيقة' : ago + ' دقيقة'}).`);
+  if (c.now) L.push(`الساعة عند الـ Worker دلوقتي: ${c.now}`);
+  L.push(c.tasks?.length ? 'مهام النهاردة اللي ليها تذكير:\n' + c.tasks.map(t => `${t.sent ? '✓ اتبعت' : '… مستني'} ${t.time} — ${t.title}`).join('\n') : 'مفيش مهام النهاردة ليها تذكير متسجلة على Supabase. لو لسه عاملها، استنى المزامنة شوية وجرّب تاني.');
+  if (c.errors?.length) L.push('مشاكل:\n' + c.errors.join('\n'));
+  return L.join('\n\n');
+}
+
+function alertBox(title, msg, rtl = false) {
+  openSheet(title, `<div class="card" style="${rtl ? 'line-height:1.7;font-size:14px;' : 'direction:ltr;text-align:left;font-size:13px;'}white-space:pre-wrap;word-break:break-word">${esc(msg)}</div>
     <div class="btns"><button class="btn pri" data-act="close-sheet">تمام</button></div>`);
 }
 
