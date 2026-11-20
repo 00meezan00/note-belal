@@ -105,9 +105,8 @@ export function fail(e) { console.error(e); toast('ما اتحفظش: ' + (e?.me
 
 // ---------- الكتابة بالصوت ----------
 // الآيفون فيه عيب معروف: المايك بتاع المواقع ساعات يشتغل أول مرة بس، والمرات اللي بعدها يفتح ومايسمعش.
-// اللي بيساعد: "ودن" جديدة خالص كل مرة، ونرمي القديمة كويس، ومنستخدمش وضع "اسمع على طول" على الآيفون.
-// ولو برضه مسمعش حاجة في أول 6 ثواني، بنقولك تستخدم مايك الكيبورد (ده دايمًا شغال).
-const IOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+// اللي بنعمله: "ودن" جديدة خالص كل مرة، وبتفضل تسمع الجملة كلها لحد ما تدوس وقف.
+// ولو مسمعش حاجة في أول 6 ثواني، بنقولك تصلّح المايك أو تستخدم مايك الكيبورد (ده دايمًا شغال).
 let current = null;
 function kill(r) {
   if (!r) return;
@@ -141,13 +140,13 @@ export function dictate(onText, onState, onDeaf) {
   };
   const go = () => {
     kill(r);
-    r = new R(); r.lang = 'ar-EG'; r.interimResults = true; r.continuous = !IOS; r.maxAlternatives = 1;
+    r = new R(); r.lang = 'ar-EG'; r.interimResults = true; r.continuous = true; r.maxAlternatives = 1;
     r.onresult = e => { heard = true; clearTimeout(watchdog); cur = textOf(e.results); restarts = 0; onText(text()); };
     r.onerror = ev => {
       if (['not-allowed', 'service-not-allowed'].includes(ev.error)) { want = false; toast('اسمح للتطبيق يستخدم المايك من الإعدادات'); }
       if (ev.error === 'audio-capture') want = false;
     };
-    r.onend = () => {   // الآيفون بيقفل بعد كل جملة، فبنفتح ودن جديدة ونكمّل على الكلام اللي فات
+    r.onend = () => {   // الموبايل قفل لوحده بعد سكتة طويلة؟ نفتح ودن جديدة ونكمّل على الكلام اللي فات
       if (!want || current !== me) return me.finish();
       base = text(); cur = '';
       if (restarts++ < 30) setTimeout(() => { if (want && current === me) go(); }, 120);

@@ -119,6 +119,8 @@ export const stepActions = {
 // ---------------- كارت "مرتبط بـ" ----------------
 export const linksSlot = (type, id) => `<div data-links="${type}:${id}"><div class="card mut">بيحمّل الحاجات المرتبطة…</div></div>`;
 export async function fillLinks(root) {
+  // بعد "صلّح المايك": الصفحة اتفتحت من جديد، فنرجّعلك شاشة "سجّل بسرعة" بالكلام اللي كنت كاتبه
+  try { if (sessionStorage.getItem('nota.cap') !== null && document.getElementById('sheet-root').hidden) openCapture(); } catch (e) {}
   for (const slot of root.querySelectorAll('[data-links]')) {
     const [type, id] = slot.dataset.links.split(':');
     try {
@@ -254,6 +256,9 @@ export async function openCapture() {
     <div data-extra="income" hidden><label class="field"><span>المبلغ</span><input name="in_amount" inputmode="decimal" placeholder="2500"></label></div>
     <button class="btn amb" data-act="cap-save">حفظ</button>`);
   sheetEl()._cats = cats;
+  let back = null; try { back = sessionStorage.getItem('nota.cap'); sessionStorage.removeItem('nota.cap'); } catch (e) {}
+  if (back) { sheetEl().querySelector('[name=text]').value = back; readMoney(); }
+  if (back !== null) { const h = document.getElementById('cap-hint'); if (h) h.textContent = 'المايك اتصلّح. دوس عليه واتكلم'; }
 }
 function setType(v) {
   const s = sheetEl();
@@ -288,6 +293,11 @@ async function saveMoney(type, f, text) {
 }
 export const captureActions = {
   'cap-type'(el) { setType(el.dataset.v); },
+  // الآيفون بيعلّق المايك بعد أول مرة، والحل إن الصفحة تتفتح من جديد. بنحفظ الكلام اللي كتبته ونرجّعلك نفس الشاشة
+  'cap-fix'() {
+    try { sessionStorage.setItem('nota.cap', sheetEl().querySelector('[name=text]')?.value || ''); } catch (e) {}
+    location.reload();
+  },
   'cap-text'() { readMoney(); },
   'cap-mic'(el) {
     const ta = sheetEl().querySelector('[name=text]');
@@ -309,8 +319,8 @@ export const captureActions = {
     }, () => {   // مايك الموقع علّق؟ نفتح الكيبورد عشان تتكلم من المايك بتاعه
       if (!ta.isConnected) return;
       const h = document.getElementById('cap-hint');
-      if (h) h.innerHTML = '<b>المايك مسمعش.</b> دوس على المايك اللي في الكيبورد تحت واتكلم، وبعدين دوس حفظ';
-      ta.focus();
+      if (h) h.innerHTML = '<b>المايك مسمعش.</b> دوس "صلّح المايك"، أو اتكلم من مايك الكيبورد وبعدين دوس حفظ'
+        + '<br><button type="button" class="btn sm amb" style="margin-top:8px" data-act="cap-fix">صلّح المايك</button>';
     });
     if (!rec) { ta.focus(); toast('دوس على مايك الكيبورد واتكلم'); }
   },
