@@ -1,6 +1,6 @@
 // مكونات مشتركة بين الشاشات: المهام، الخطوات، الربط، التسجيل السريع
 import { list, ins, upd, del, archive, unarchive, linksOf, link, rpc, single } from './db.js';
-import { esc, ic, fd, today, addDays, dueText, empty, openSheet, closeSheet, sheetEl, formOf, toast, fail, dictate, opts, sw, n } from './ui.js';
+import { esc, ic, fd, today, addDays, dueText, empty, openSheet, closeSheet, sheetEl, formOf, toast, fail, dictate, opts, sw, n, IOS, micUsed } from './ui.js';
 
 export const AREAS = ['المبيعات والمحلات','التسويق','خدمة العملاء','خدمة ما بعد البيع والإرجاع','المحاسبة والتحصيل','الموردين وقطع الغيار','التسعير والصفقات','الموارد البشرية','الهيكل والنظام','متابعة الفنيين','التوسع','تطويري الشخصي'];
 export const KIND = { task: ['مهمة','cal'], goal: ['هدف','goal'], idea: ['فكرة','spark'], problem: ['مشكلة','alert'], member: ['فرد','user'],
@@ -258,7 +258,7 @@ export async function openCapture() {
   sheetEl()._cats = cats;
   let back = null; try { back = sessionStorage.getItem('nota.cap'); sessionStorage.removeItem('nota.cap'); } catch (e) {}
   if (back) { sheetEl().querySelector('[name=text]').value = back; readMoney(); }
-  if (back !== null) { const h = document.getElementById('cap-hint'); if (h) h.textContent = 'المايك اتصلّح. دوس عليه واتكلم'; }
+  if (back !== null) { const h = document.getElementById('cap-hint'); if (h) h.innerHTML = '<b>جاهز. دوس على المايك تاني واتكلم</b>'; }
 }
 function setType(v) {
   const s = sheetEl();
@@ -302,6 +302,8 @@ export const captureActions = {
   'cap-mic'(el) {
     const ta = sheetEl().querySelector('[name=text]');
     if (rec) { rec.stop(); return; }
+    // الآيفون: المايك بيسمع أول مرة بس بعد فتح الصفحة. لو اتستخدم قبل كده، نفتح الصفحة من جديد الأول (ثانية واحدة)
+    if (IOS && micUsed()) return captureActions['cap-fix']();
     const pre = ta.value.trim() ? ta.value.trim() + ' ' : '';
     let me = null;
     me = rec = dictate(t => { if (ta.isConnected) { ta.value = pre + t; readMoney(); } }, async live => {

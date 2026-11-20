@@ -107,7 +107,10 @@ export function fail(e) { console.error(e); toast('ما اتحفظش: ' + (e?.me
 // الآيفون فيه عيب معروف: المايك بتاع المواقع ساعات يشتغل أول مرة بس، والمرات اللي بعدها يفتح ومايسمعش.
 // اللي بنعمله: "ودن" جديدة خالص كل مرة، وبتفضل تسمع الجملة كلها لحد ما تدوس وقف.
 // ولو مسمعش حاجة في أول 6 ثواني، بنقولك تصلّح المايك أو تستخدم مايك الكيبورد (ده دايمًا شغال).
-let current = null;
+let current = null, usedOnce = false;
+export const IOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+// المايك اتستخدم قبل كده من ساعة ما الصفحة اتفتحت؟ (على الآيفون معناه إنه مش هيسمع تاني)
+export const micUsed = () => usedOnce;
 function kill(r) {
   if (!r) return;
   r.onstart = r.onresult = r.onerror = r.onend = null;
@@ -141,7 +144,7 @@ export function dictate(onText, onState, onDeaf) {
   const go = () => {
     kill(r);
     r = new R(); r.lang = 'ar-EG'; r.interimResults = true; r.continuous = true; r.maxAlternatives = 1;
-    r.onresult = e => { heard = true; clearTimeout(watchdog); cur = textOf(e.results); restarts = 0; onText(text()); };
+    r.onresult = e => { heard = true; usedOnce = true; clearTimeout(watchdog); cur = textOf(e.results); restarts = 0; onText(text()); };
     r.onerror = ev => {
       if (['not-allowed', 'service-not-allowed'].includes(ev.error)) { want = false; toast('اسمح للتطبيق يستخدم المايك من الإعدادات'); }
       if (ev.error === 'audio-capture') want = false;
