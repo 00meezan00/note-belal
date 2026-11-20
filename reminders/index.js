@@ -27,7 +27,8 @@ export default {
         const user = await u.json();
         const log = [];
         const n = await sendToUser(env, user.id, { title: 'نوتة بلال', body: 'الإشعارات شغالة. هتوصلك التذكيرات في مواعيدها.', url: './#/settings' }, log);
-        return n ? json({ sent: n }) : json({ error: log.join('\n') || 'ما اتبعتش' }, 404);
+        if (!n) return json({ error: log.join('\n') || 'ما اتبعتش' }, 404);
+        return json({ sent: n, check: await checkUser(env, user.id) });
       } catch (e) {
         return json({ error: String(e && e.message || e) }, 500);
       }
@@ -40,12 +41,32 @@ export default {
 async function runReminders(env) {
   const profiles = await db(env, 'profiles?select=user_id,display_name,timezone,morning_reminder,morning_enabled,evening_reminder,evening_enabled');
   for (const p of profiles) {
+    await beat(env, p.user_id).catch(() => {});   // بنسجل إن الـ Worker صحي لوحده (زرار "جرّب" بيعرضها)
+    try { await remindUser(env, p); } catch (e) { console.error('reminders', p.user_id, e); }
+  }
+}
+
+// كل نوع تذكير لوحده: لو واحد وقع، الباقي يكمل عادي
+async function safe(label, fn) { try { await fn(); } catch (e) { console.error(label, e); } }
+
+async function remindUser(env, p) {
+  {
     const { date, minutes, dow } = localNow(p.timezone || 'Africa/Cairo');
     const dueMin = tm => tm <= minutes && tm > minutes - 15;
     const due = t => { if (!t) return false; const [h, m] = t.split(':').map(Number); return dueMin(h * 60 + m); };
     const uid = p.user_id, name = p.display_name || 'بلال';
     const open = await db(env, `tasks?select=id,title,top3_on,reminder_time,due_on&user_id=eq.${uid}&done=eq.false&archived_at=is.null&due_on=lte.${date}`);
 
+    // المهام الأول، لأنها أهم حاجة. ولو غيّرت الساعة، المفتاح بيتغير فالتذكير الجديد بيتبعت
+    await safe('tasks', async () => {
+      for (const t of open) {
+        if (t.due_on === date && due(t.reminder_time) && await claim(env, uid, `task:${t.id}:${date}:${t.reminder_time.slice(0, 5)}`)) {
+          await sendToUser(env, uid, { title: 'تذكير', body: t.title, url: './#/today' });
+        }
+      }
+    });
+
+    await safe('morning-evening', async () => {
     if (p.morning_enabled && due(p.morning_reminder) && await claim(env, uid, `morning:${date}`)) {
       const top = open.filter(t => t.top3_on === date).map(t => t.title);
       const body = open.length ? `عندك ${tasksWord(open.length)} النهاردة${top.length ? '. أهمهم: ' + top.join('، ') : ''}` : 'مفيش مهام لسه. سجّل أهم حاجة النهاردة.';
@@ -56,6 +77,8 @@ async function runReminders(env) {
       const done = all.filter(t => t.done).length;
       await sendToUser(env, uid, { title: 'راجع يومك', body: `خلصت ${done} من ${all.length} مهام النهاردة. سجّل رأيك في التيم واللي اتعمل.`, url: './#/today' });
     }
+    });
+    await safe('goals', async () => {
     const goals = await db(env, `goals?select=id,title,due_on,reminder_time&user_id=eq.${uid}&status=eq.active&archived_at=is.null&reminder_enabled=is.true`);
     for (const g of goals) {
       if (due(g.reminder_time) && await claim(env, uid, `goal:${g.id}:${date}`)) {
@@ -63,12 +86,9 @@ async function runReminders(env) {
         await sendToUser(env, uid, { title: 'تذكير بهدف', body: g.title + (left === null ? '' : left < 0 ? ' — متأخر' : left === 0 ? ' — موعده النهاردة' : ` — باقي ${left} أيام`), url: `./#/goal/${g.id}` });
       }
     }
-    for (const t of open) {
-      if (t.due_on === date && due(t.reminder_time) && await claim(env, uid, `task:${t.id}:${date}`)) {
-        await sendToUser(env, uid, { title: 'تذكير', body: t.title, url: './#/today' });
-      }
-    }
+    });
 
+    await safe('courses', async () => {
     // مواعيد الكورسات: كل ميعاد = يوم في الأسبوع + ساعة، والتذكير قبله بالوقت اللي اخترته
     const courses = await db(env, `courses?select=id,title,schedule,remind_before,schedule_until&user_id=eq.${uid}&status=eq.active&archived_at=is.null`).catch(() => []);
     for (const c of courses) {
@@ -85,7 +105,32 @@ async function runReminders(env) {
         }
       }
     }
+    });
   }
+}
+
+// ---------------- الفحص (لزرار "جرّب") ----------------
+async function beat(env, userId) {
+  await fetch(`${env.SUPABASE_URL}/rest/v1/reminder_log?on_conflict=user_id,key`, {
+    method: 'POST', headers: { ...auth(env), 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify({ user_id: userId, key: 'cron:last', created_at: new Date().toISOString() }) });
+}
+async function checkUser(env, uid) {
+  const out = { now: null, lastRun: null, tasks: [], errors: [] };
+  try {
+    const [p] = await db(env, `profiles?select=timezone&user_id=eq.${uid}`);
+    const { date, minutes } = localNow(p?.timezone || 'Africa/Cairo');
+    out.now = `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+    const [b] = await db(env, `reminder_log?select=created_at&user_id=eq.${uid}&key=eq.cron:last`);
+    out.lastRun = b ? b.created_at : null;
+    const ts = await db(env, `tasks?select=id,title,reminder_time&user_id=eq.${uid}&done=eq.false&archived_at=is.null&due_on=eq.${date}&reminder_time=not.is.null&order=reminder_time`);
+    const sent = new Set((await db(env, `reminder_log?select=key&user_id=eq.${uid}&key=like.task:*`)).map(x => x.key));
+    out.tasks = ts.map(t => ({ title: t.title, time: t.reminder_time.slice(0, 5), sent: sent.has(`task:${t.id}:${date}:${t.reminder_time.slice(0, 5)}`) }));
+  } catch (e) { out.errors.push(String(e.message || e)); }
+  for (const [label, path] of [['الأهداف', `goals?select=id,reminder_time,reminder_enabled&user_id=eq.${uid}&limit=1`], ['الكورسات', `courses?select=id,schedule,remind_before,schedule_until&user_id=eq.${uid}&limit=1`]]) {
+    try { await db(env, path); } catch (e) { out.errors.push(`${label}: ${String(e.message || e).slice(0, 200)}`); }
+  }
+  return out;
 }
 
 const tasksWord = n => n === 1 ? 'مهمة واحدة' : n === 2 ? 'مهمتين' : n <= 10 ? `${n} مهام` : `${n} مهمة`;
