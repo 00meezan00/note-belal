@@ -248,3 +248,7 @@ a.card:active,button.card:active,.lnk:active{transform:scale(.985)}
   #main.enter-forward,#main.enter-back,#main.enter-tab{animation:none}
   *{transition:none!important}
 }
+
+/* حالة المزامنة */
+#syncpill{position:fixed;top:calc(4px + var(--safe-t));left:50%;transform:translateX(-50%);z-index:55;background:var(--ink);color:var(--paper);font-size:12px;font-weight:500;padding:3px 12px;border-radius:999px;box-shadow:0 2px 8px rgba(0,0,0,.18);white-space:nowrap}
+#syncpill.off{background:var(--amb);color:#15202B}

@@ -1,5 +1,5 @@
 // سجل المشاكل، البحث، الأرشيف، الإعدادات
-import { list, one, ins, upd, upsert, single, unarchive, link, auth, sb } from './db.js';
+import { list, one, ins, upd, upsert, single, unarchive, link, auth, sb, exportAll, syncNow, syncStatus } from './db.js';
 import * as CFG from './config.js';
 const VAPID_PUBLIC_KEY = CFG.VAPID_PUBLIC_KEY || '', WORKER_URL = CFG.WORKER_URL || '';
 import { esc, ic, fd, today, empty, openSheet, closeSheet, sheetEl, formOf, toast, fail, opts, sw } from './ui.js';
@@ -123,6 +123,7 @@ export default {
           <div class="card list"><b style="font-weight:600;display:block;padding-bottom:4px">الأمان</b>
             ${row('قفل فلوسي بـ Face ID', 'لو قفلته، فلوسي هتفتح من غير بصمة', sw(p?.money_lock_enabled !== false, 'data-act="pref" data-k="money_lock_enabled"'))}</div>
           <div class="card list"><b style="font-weight:600;display:block;padding-bottom:4px">البيانات</b>
+            ${row('نسخة على الموبايل', syncLine(), '<button class="btn sm" data-act="sync-now">زامن دلوقتي</button>')}
             ${row('نسخة احتياطية', 'ملف فيه كل بياناتك، احتفظ بيه على الموبايل', '<button class="btn sm" data-act="backup">نزّل نسخة</button>')}
             ${row('الأرشيف', 'الحاجات اللي شيلتها', '<a class="btn sm" href="#/archive">افتح</a>')}
             ${row('تسجيل الخروج', '', '<button class="btn sm bad" data-act="signout">خروج</button>')}</div>
@@ -136,35 +137,17 @@ export default {
       async crit(el) { const arr = el.value.split(/[،,]/).map(s => s.trim()).filter(Boolean); if (!arr.length) return; try { await upd('role_criteria', el.dataset.id, { criteria: arr }); toast('اتحفظ'); } catch (e) { fail(e); } },
       async 'crit-add'(form) { const r = form.querySelector('[name=role]').value.trim(); if (!r) return; try { await ins('role_criteria', { role: r, criteria: ['الالتزام'] }); doRefresh(); } catch (e) { fail(e); } },
       async backup() {
-        const tables = ['profiles','company','company_metrics','company_log','ideas','goals','plan_steps','recurring_tasks','tasks','links','problems','role_criteria','team_members','member_ratings','member_notes','weekly_reviews','courses','org_units','sops','job_roles','positions','candidates','projects','project_clients','project_devs','project_dev_notes','wallets','assets','investments','investment_returns','debts','debt_payments','commitments','budget_categories','expenses','incomes','financial_goals','net_worth_snapshots'];
         try {
-          toast('بيجهز النسخة…');
-          const out = { app: 'nota-bilal', exported_at: new Date().toISOString() };
-          for (const t of tables) { const { data, error } = await sb.from(t).select('*'); if (error) throw error; out[t] = data; }
+          const out = { app: 'nota-bilal', exported_at: new Date().toISOString(), ...exportAll() };
           const blob = new Blob([JSON.stringify(out, null, 1)], { type: 'application/json' });
           const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `nota-bilal-${today()}.json`;
           document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
         } catch (e) { fail(e); }
       },
-      async 'push-enable'() {
-        try {
-          if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) return toast('افتح التطبيق من أيقونة الشاشة الرئيسية الأول');
-          if (!VAPID_PUBLIC_KEY) return toast('ناقص مفتاح الإشعارات في config.js');
-          const perm = await Notification.requestPermission();
-          if (perm !== 'granted') return toast('الإشعارات اترفضت. تقدر تفعلها من إعدادات الآيفون');
-          const reg = await navigator.serviceWorker.ready;
-          const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64u(VAPID_PUBLIC_KEY) });
-          const j = sub.toJSON();
-          await upsert('push_subscriptions', { endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth }, 'endpoint');
-          toast('الإشعارات اتفعلت'); doRefresh();
-        } catch (e) { fail(e); }
-      },
-      async 'push-test'() {
-        try {
-          const s = await auth.session();
-          const r = await fetch(WORKER_URL.replace(/\/$/, '') + '/test', { method: 'POST', headers: { Authorization: 'Bearer ' + s.access_token } });
-          toast(r.ok ? 'اتبعت. لو ما وصلش خلال دقيقة، قولي' : 'الـ Worker ردّ بمشكلة: ' + r.status);
-        } catch (e) { toast('مقدرتش أوصل للـ Worker. اتأكد من اللينك في config.js'); }
+      async 'sync-now'() {
+        if (!navigator.onLine) return toast('مفيش نت. تعديلاتك محفوظة على الموبايل، وهتتبعت أول ما النت يرجع');
+        toast('بيزامن…'); const ok = await syncNow(); const s = syncStatus();
+        toast(ok ? 'اتزامن' : s.pending ? `فاضل ${edits(s.pending)}، هتتبعت لوحدها` : 'ما اتزامنش دلوقتي، هيحاول تاني لوحده'); doRefresh();
       },
       async signout() { await auth.signOut(); location.hash = ''; location.reload(); },
     },
@@ -177,3 +160,13 @@ async function pushStatus() {
   if (Notification.permission === 'denied') return 'denied';
   try { const reg = await navigator.serviceWorker.getRegistration(); const sub = reg && await reg.pushManager.getSubscription(); return sub ? 'on' : 'off'; } catch (e) { return 'off'; }
 }
+
+function syncLine() {
+  const s = syncStatus();
+  const when = s.lastSync ? new Date(s.lastSync).toLocaleTimeString('ar-EG-u-nu-latn', { hour: 'numeric', minute: '2-digit' }) : '';
+  if (!s.online) return `التطبيق شغال من غير نت${s.pending ? ` · ${edits(s.pending)} مستنية النت` : ''}`;
+  if (s.pending) return `بيتبعت ${edits(s.pending)}…`;
+  return when ? `كل بياناتك على الموبايل · آخر مزامنة ${when}` : 'كل بياناتك على الموبايل';
+}
+
+function edits(n) { return n === 1 ? 'تعديل واحد' : n === 2 ? 'تعديلين' : n <= 10 ? `${n} تعديلات` : `${n} تعديل`; }

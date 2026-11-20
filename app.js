@@ -1,5 +1,5 @@
 // نوتة بلال — الهيكل الأساسي: الدخول، التنقل، الشريط اللي تحت، القائمة
-import { sb, configured, auth, single, rpc, upd, upsert } from './db.js';
+import { sb, configured, auth, single, rpc, upd, upsert, openLocal, pull, startSync, onSync, syncStatus } from './db.js';
 import { esc, ic, closeSheet, toast, fail, formOf, lockScroll, unlockScroll } from './ui.js';
 import { setRefresh, taskActions, stepActions, linkActions, captureActions, openCapture, fillLinks } from './comps.js';
 import today from './today.js';
@@ -220,6 +220,7 @@ function welcome(company) {
   };
 }
 
+let syncing = false;
 async function start() {
   if (!configured) {
     $('#main').innerHTML = `<div class="auth"><h1>نوتة بلال</h1><p>لسه محتاج تحط بيانات Supabase في ملف <b>config.js</b>.</p></div>`;
@@ -228,15 +229,42 @@ async function start() {
   const s = await auth.session();
   if (!s) return authScreen();
   try {
+    const has = await openLocal(s.user.id);
+    if (!has) {
+      if (!navigator.onLine) { $('#main').innerHTML = `<div class="auth"><h1>نوتة بلال</h1><p>أول مرة محتاج نت عشان ننزّل نسختك على الموبايل. بعد كده هيشتغل من غير نت.</p></div>`; return; }
+      $('#main').innerHTML = '<div class="boot">بننزّل نسختك على الموبايل…</div>';
+      await pull(true);
+    }
     let prof = await single('profiles');
-    if (!prof) { await rpc('seed_my_defaults'); prof = await single('profiles'); }
+    if (!prof && navigator.onLine) { await rpc('seed_my_defaults'); prof = await single('profiles'); }
     applyTheme(prof?.theme);
+    if (!syncing) { syncing = true; startSync(); }
     if (!prof?.onboarded) return welcome(await single('company'));
     rpc('spawn_recurring').catch(() => {});
     await render();
     setTimeout(prefetchTabs, 600);
   } catch (e) { fail(e); render(); }
 }
+
+// ---------- حالة المزامنة ----------
+let pendingRefresh = false;
+function busy() {
+  const a = document.activeElement;
+  return !document.getElementById('sheet-root').hidden || document.getElementById('drawer') || (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName));
+}
+function showSync() {
+  const el = document.getElementById('syncpill'); if (!el) return;
+  const s = syncStatus();
+  let t = '';
+  if (!s.online) t = s.pending ? `أوفلاين · ${edits(s.pending)} مستنية النت` : 'أوفلاين · شغال من الموبايل';
+  else if (s.pending) t = 'بيحفظ على Supabase…';
+  el.textContent = t; el.hidden = !t; el.classList.toggle('off', !s.online);
+}
+onSync(type => {
+  showSync();
+  if (type === 'data') { viewCache.clear(); if (busy()) pendingRefresh = true; else if (current) render({ refresh: true }); }
+});
+setInterval(() => { if (pendingRefresh && !busy()) { pendingRefresh = false; render({ refresh: true }); } }, 1500);
 
 export function applyTheme(t = 'system') {
   try { localStorage.setItem('nota.theme', t); } catch (e) {}
@@ -245,5 +273,7 @@ export function applyTheme(t = 'system') {
 window.__applyTheme = applyTheme;
 
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
-if (sb) auth.onChange(s => { if (!s) authScreen(); });
+if (sb) auth.onChange(s => { if (!s && navigator.onLine) authScreen(); });
 start();
+
+function edits(n) { return n === 1 ? 'تعديل واحد' : n === 2 ? 'تعديلين' : n <= 10 ? `${n} تعديلات` : `${n} تعديل`; }

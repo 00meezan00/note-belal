@@ -1,5 +1,5 @@
 // نوتة بلال: بيخلي التطبيق يفتح لو النت ضعيف، وبيجيب آخر نسخة لما النت يبقى موجود
-const CACHE = 'nota-v4';
+const CACHE = 'nota-v5';
 const SHELL = ['./', 'index.html', 'app.css', 'manifest.webmanifest', 'app.js', 'company.js', 'comps.js', 'config.js', 'db.js', 'goals.js', 'misc.js', 'money.js', 'more.js', 'projects.js', 'review.js', 'team.js', 'today.js', 'ui.js'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
@@ -16,8 +16,11 @@ self.addEventListener('fetch', e => {
     return;
   }
   if (u.origin !== location.origin) return;   // بيانات Supabase دايمًا من النت
-  e.respondWith(fetch(e.request).then(r => { const copy = r.clone(); caches.open(CACHE).then(c => c.put(e.request, copy)); return r; })
-    .catch(() => caches.match(e.request).then(r => r || caches.match('index.html'))));
+  // ملفات التطبيق: بتفتح من الموبايل على طول (حتى من غير نت)، وبتتحدث في الخلفية للمرة الجاية
+  e.respondWith(caches.open(CACHE).then(c => c.match(e.request, { ignoreSearch: true }).then(hit => {
+    const net = fetch(e.request).then(r => { if (r.ok) c.put(e.request, r.clone()); return r; }).catch(() => hit || c.match('index.html'));
+    return hit || net;
+  })));
 });
 // الإشعارات (المرحلة الجاية): بيعرض اللي بيبعته Cloudflare Worker
 self.addEventListener('push', e => {
