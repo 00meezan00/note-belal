@@ -196,11 +196,12 @@ function b64u(s) { const p = '='.repeat((4 - s.length % 4) % 4); const b = atob(
 function checkText(c) {
   const L = ['✓ إشعار التجربة اتبعت، يعني الموبايل والمفاتيح مظبوطين.'];
   const ago = c.lastRun ? Math.round((Date.now() - Date.parse(c.lastRun)) / 60000) : null;
-  if (ago === null) L.push('✗ الـ Worker عمره ما صحي لوحده. عشان كده تذكيرات المهام مش بتوصل.', 'الحل: Cloudflare ← Workers ← nota-reminders ← Settings ← Trigger Events ← Add ← Cron Triggers ← اكتب */5 * * * * ← Add.');
+  if (c.lastRunKnown === false) L.push('؟ مش عارف أشوف الـ Worker بيصحى لوحده ولا لأ، لأن جدول reminder_log فيه مشكلة (تحت). شغّل ملف supabase-reminder-log-fix.sql في Supabase، واستنى 5 دقايق، وجرّب تاني.');
+  else if (ago === null) L.push('✗ الـ Worker عمره ما صحي لوحده. عشان كده تذكيرات المهام مش بتوصل.', 'الحل: Cloudflare ← Workers ← nota-reminders ← Settings ← Trigger Events ← Add ← Cron Triggers ← اكتب */5 * * * * ← Add. (لو لسه حاطه، استنى 5 دقايق وجرّب تاني)');
   else if (ago > 15) L.push(`✗ آخر مرة الـ Worker صحي لوحده كان من ${ago} دقيقة، وده كتير (المفروض كل 5 دقايق). اتأكد من الـ Cron Trigger في Cloudflare.`);
   else L.push(`✓ الـ Worker بيصحى لوحده (آخر مرة من ${ago < 1 ? 'أقل من دقيقة' : ago + ' دقيقة'}).`);
   if (c.now) L.push(`الساعة عند الـ Worker دلوقتي: ${c.now}`);
-  L.push(c.tasks?.length ? 'مهام النهاردة اللي ليها تذكير:\n' + c.tasks.map(t => `${t.sent ? '✓ اتبعت' : '… مستني'} ${t.time} — ${t.title}`).join('\n') : 'مفيش مهام النهاردة ليها تذكير متسجلة على Supabase. لو لسه عاملها، استنى المزامنة شوية وجرّب تاني.');
+  if (c.tasksKnown !== false) L.push(c.tasks?.length ? 'مهام النهاردة اللي ليها تذكير:\n' + c.tasks.map(t => `${t.sent ? '✓ اتبعت' : '… مستني'} ${t.time} — ${t.title}`).join('\n') : 'مفيش مهام النهاردة ليها تذكير متسجلة على Supabase. لو لسه عاملها، استنى المزامنة شوية وجرّب تاني.');
   if (c.errors?.length) L.push('مشاكل:\n' + c.errors.join('\n'));
   return L.join('\n\n');
 }
