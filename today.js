@@ -9,10 +9,13 @@ async function linkLabels(taskIds) {
   const goalIds = ls.filter(l => l.to_type === 'goal').map(l => l.to_id);
   const probIds = ls.filter(l => l.to_type === 'problem').map(l => l.to_id);
   const memIds = ls.filter(l => l.to_type === 'member').map(l => l.to_id);
-  const [g, p, m] = await Promise.all([
+  const candIds = ls.filter(l => l.to_type === 'candidate').map(l => l.to_id);
+  const devIds = ls.filter(l => l.to_type === 'project_dev').map(l => l.to_id);
+  const [g, p, m, c, d] = await Promise.all([
     goalIds.length ? list('goals', { in: ['id', goalIds] }) : [], probIds.length ? list('problems', { in: ['id', probIds] }) : [],
-    memIds.length ? list('team_members', { in: ['id', memIds] }) : []]);
-  const name = Object.fromEntries([...g.map(x => [x.id, x.title]), ...p.map(x => [x.id, 'مشكلة: ' + x.title]), ...m.map(x => [x.id, x.name])]);
+    memIds.length ? list('team_members', { in: ['id', memIds] }) : [], candIds.length ? list('candidates', { in: ['id', candIds] }) : [],
+    devIds.length ? list('project_devs', { in: ['id', devIds] }) : []]);
+  const name = Object.fromEntries([...g.map(x => [x.id, x.title]), ...p.map(x => [x.id, 'مشكلة: ' + x.title]), ...m.map(x => [x.id, x.name]), ...c.map(x => [x.id, 'التوظيف']), ...d.map(x => [x.id, 'مشاريعي: ' + x.title])]);
   const out = {};
   ls.forEach(l => { if (!out[l.from_id] && name[l.to_id]) out[l.from_id] = name[l.to_id]; });
   return out;

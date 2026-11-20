@@ -186,3 +186,17 @@ a.card,button.card{cursor:pointer;text-align:start;width:100%}
 /* auth */
 .auth{min-height:100vh;display:flex;flex-direction:column;justify-content:center;gap:16px;padding:24px}
 .auth h1{font-family:"Reem Kufi",system-ui,sans-serif;font-size:40px;margin:0;line-height:1.2}
+
+/* التقرير كـ PDF */
+#print-area{display:none}
+@media print{
+  body{background:#fff!important;color:#000}
+  body *{visibility:hidden}
+  #print-area,#print-area *{visibility:visible}
+  #print-area{display:block;position:absolute;inset:0;padding:24px 28px;font:13pt/1.7 "Readex Pro",sans-serif;color:#000}
+  #print-area h1{font:600 20pt "Reem Kufi",sans-serif;margin:0}
+  #print-area .per{color:#555;margin:2px 0 14px}
+  #print-area h2{font:600 14pt "Reem Kufi",sans-serif;margin:16px 0 4px;border-bottom:1px solid #ccc;padding-bottom:3px}
+  #print-area p{margin:2px 0}
+  #dock,#top,.fab,#toast{display:none!important}
+}

@@ -1,5 +1,7 @@
 // سجل المشاكل، البحث، الأرشيف، الإعدادات
 import { list, one, ins, upd, upsert, single, unarchive, link, auth, sb } from './db.js';
+import * as CFG from './config.js';
+const VAPID_PUBLIC_KEY = CFG.VAPID_PUBLIC_KEY || '', WORKER_URL = CFG.WORKER_URL || '';
 import { esc, ic, fd, today, empty, openSheet, closeSheet, sheetEl, formOf, toast, fail, opts, sw } from './ui.js';
 import { KIND, hrefOf, linksSlot, fillLinks, archiveWithUndo, doRefresh, openTask } from './comps.js';
 
@@ -21,7 +23,7 @@ async function problemSheet(p = {}) {
   if (p.id) fillLinks(sheetEl());
 }
 
-const ARCH_TABLES = [['tasks', 'title', 'مهمة'], ['goals', 'title', 'هدف'], ['ideas', 'title', 'فكرة'], ['problems', 'title', 'مشكلة'], ['team_members', 'name', 'فرد'], ['company_metrics', 'label', 'مؤشر'], ['company_log', 'text', 'تطور']];
+const ARCH_TABLES = [['tasks', 'title', 'مهمة'], ['goals', 'title', 'هدف'], ['ideas', 'title', 'فكرة'], ['problems', 'title', 'مشكلة'], ['team_members', 'name', 'فرد'], ['company_metrics', 'label', 'مؤشر'], ['company_log', 'text', 'تطور'], ['projects', 'name', 'مشروع'], ['project_devs', 'title', 'تطوير في مشروع'], ['project_clients', 'name', 'عميل مشروع'], ['courses', 'title', 'كورس'], ['sops', 'title', 'إجراء'], ['positions', 'title', 'مكان فاضي'], ['candidates', 'name', 'متقدم'], ['recurring_tasks', 'title', 'مهمة متكررة']];
 
 export default {
   problems: {
@@ -103,6 +105,7 @@ export default {
       const t = p?.theme || 'system';
       const row = (l, sub, right) => `<div class="row" style="padding:10px 0"><div style="flex:1;line-height:1.4"><div style="font-weight:500">${l}</div>${sub ? `<div class="mut">${sub}</div>` : ''}</div>${right}</div>`;
       const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+      const pushState = await pushStatus();
       return {
         title: 'الإعدادات', back: '#/today',
         html: `<div class="stack">
@@ -110,9 +113,10 @@ export default {
           <div class="card"><b style="font-weight:600">الشكل</b>
             <div class="seg" style="margin-top:8px">${[['system', 'زي الموبايل'], ['light', 'فاتح'], ['dark', 'ليلي']].map(([k, l]) => `<button class="${t === k ? 'on' : ''}" data-act="theme" data-v="${k}">${l}</button>`).join('')}</div></div>
           <div class="card list"><b style="font-weight:600;display:block;padding-bottom:4px">التذكيرات</b>
+            ${row('الإشعارات على الموبايل', pushState === 'on' ? 'شغالة على الموبايل ده' : pushState === 'denied' ? 'مقفولة من إعدادات الآيفون: الإعدادات ← الإشعارات ← نوتة بلال' : pushState === 'unsupported' ? 'افتح التطبيق من أيقونة الشاشة الرئيسية الأول' : 'لسه مش متفعلة', pushState === 'on' ? (WORKER_URL ? '<button class="btn sm" data-act="push-test">جرّب</button>' : '') : pushState === 'unsupported' || pushState === 'denied' ? '' : '<button class="btn sm amb" data-act="push-enable">فعّل</button>')}
             ${row('تذكير الصبح بمهام النهاردة', `<input type="time" class="inp" style="width:auto;min-height:36px;margin-top:4px" value="${(p?.morning_reminder || '08:30').slice(0, 5)}" data-change="pref-time" data-k="morning_reminder">`, sw(p?.morning_enabled, 'data-act="pref" data-k="morning_enabled"'))}
             ${row('تذكير بالليل تراجع يومك', `<input type="time" class="inp" style="width:auto;min-height:36px;margin-top:4px" value="${(p?.evening_reminder || '22:00').slice(0, 5)}" data-change="pref-time" data-k="evening_reminder">`, sw(p?.evening_enabled, 'data-act="pref" data-k="evening_enabled"'))}
-            <div class="mut" style="padding-top:8px">تذكير كل هدف بيتظبط من جوّاه. الإشعارات هتشتغل في المرحلة الجاية.</div></div>
+            <div class="mut" style="padding-top:8px">تذكير كل هدف أو مهمة بيتظبط من جوّاه.${WORKER_URL ? '' : ' الإشعارات هتوصل بعد ما تعمل الـ Worker على Cloudflare.'}</div></div>
           <div class="card"><b style="font-weight:600">معايير التقييم لكل وظيفة</b><div class="mut">افصل بين المعايير بفاصلة</div>
             ${crit.map(c => `<label class="field" style="margin-top:10px"><span>${esc(c.role)}</span><input value="${esc(c.criteria.join('، '))}" data-change="crit" data-id="${c.id}"></label>`).join('')}
             <form class="row" data-act-submit="crit-add" style="margin-top:10px"><input class="inp" name="role" placeholder="وظيفة جديدة"><button class="btn sm">ضيف</button></form></div>
@@ -142,7 +146,34 @@ export default {
           document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
         } catch (e) { fail(e); }
       },
+      async 'push-enable'() {
+        try {
+          if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) return toast('افتح التطبيق من أيقونة الشاشة الرئيسية الأول');
+          if (!VAPID_PUBLIC_KEY) return toast('ناقص مفتاح الإشعارات في config.js');
+          const perm = await Notification.requestPermission();
+          if (perm !== 'granted') return toast('الإشعارات اترفضت. تقدر تفعلها من إعدادات الآيفون');
+          const reg = await navigator.serviceWorker.ready;
+          const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64u(VAPID_PUBLIC_KEY) });
+          const j = sub.toJSON();
+          await upsert('push_subscriptions', { endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth }, 'endpoint');
+          toast('الإشعارات اتفعلت'); doRefresh();
+        } catch (e) { fail(e); }
+      },
+      async 'push-test'() {
+        try {
+          const s = await auth.session();
+          const r = await fetch(WORKER_URL.replace(/\/$/, '') + '/test', { method: 'POST', headers: { Authorization: 'Bearer ' + s.access_token } });
+          toast(r.ok ? 'اتبعت. لو ما وصلش خلال دقيقة، قولي' : 'الـ Worker ردّ بمشكلة: ' + r.status);
+        } catch (e) { toast('مقدرتش أوصل للـ Worker. اتأكد من اللينك في config.js'); }
+      },
       async signout() { await auth.signOut(); location.hash = ''; location.reload(); },
     },
   },
 };
+
+function b64u(s) { const p = '='.repeat((4 - s.length % 4) % 4); const b = atob((s + p).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from(b, c => c.charCodeAt(0)); }
+async function pushStatus() {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) return 'unsupported';
+  if (Notification.permission === 'denied') return 'denied';
+  try { const reg = await navigator.serviceWorker.getRegistration(); const sub = reg && await reg.pushManager.getSubscription(); return sub ? 'on' : 'off'; } catch (e) { return 'off'; }
+}

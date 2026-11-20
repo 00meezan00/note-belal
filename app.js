@@ -9,9 +9,11 @@ import company from './company.js';
 import misc from './misc.js';
 import projects, { projectGlobal } from './projects.js';
 import money, { moneyGlobal } from './money.js';
+import more, { moreGlobal } from './more.js';
+import review from './review.js';
 
-const SCREENS = { ...today, ...goals, ...team, ...company, ...misc, ...projects, ...money };
-const GLOBAL = { ...goalGlobal, ...teamGlobal, ...projectGlobal, ...moneyGlobal, ...taskActions, ...stepActions, ...linkActions, ...captureActions,
+const SCREENS = { ...today, ...goals, ...team, ...company, ...misc, ...projects, ...money, ...more, ...review };
+const GLOBAL = { ...goalGlobal, ...teamGlobal, ...projectGlobal, ...moneyGlobal, ...moreGlobal, ...taskActions, ...stepActions, ...linkActions, ...captureActions,
   'close-sheet': closeSheet, capture: openCapture, menu: openMenu, 'close-menu': closeMenu };
 
 const $ = s => document.querySelector(s);
@@ -104,9 +106,9 @@ function openMenu() {
   d.innerHTML = `<div class="back" data-act="close-menu"></div><nav class="panel" aria-label="القائمة">
     <div style="padding:22px 20px 14px;border-bottom:1px dashed var(--line)"><div class="disp" style="font-size:26px">نوتة بلال</div><div class="mut">Fix Team</div></div>
     <div class="gh">شغلي الخاص</div>${item('#/projects', 'layers', 'مشاريعي')}${item('#/money', 'wallet', 'فلوسي', 'مقفول')}
-    <div class="gh">متابعة</div>${item('#/problems', 'alert', 'سجل المشاكل')}${item('#/weekly', 'review', 'المراجعات الأسبوعية', '', true)}${item('#/recurring', 'repeat', 'المهام المتكررة', '', true)}${item('#/calendar', 'cal', 'التقويم', '', true)}
-    <div class="gh">تطوير</div>${item('#/courses', 'book', 'الكورسات', '', true)}${item('#/structure', 'tree', 'الهيكل والنظام', '', true)}${item('#/hiring', 'user', 'التوظيف', '', true)}
-    <div class="gh">تقارير</div>${item('#/report', 'doc', 'تقرير للمالك', '', true)}
+    <div class="gh">متابعة</div>${item('#/problems', 'alert', 'سجل المشاكل')}${item('#/weekly', 'review', 'المراجعات الأسبوعية')}${item('#/recurring', 'repeat', 'المهام المتكررة')}${item('#/calendar', 'cal', 'التقويم')}
+    <div class="gh">تطوير</div>${item('#/courses', 'book', 'الكورسات')}${item('#/structure', 'tree', 'الهيكل والنظام')}${item('#/hiring', 'user', 'التوظيف')}
+    <div class="gh">تقارير</div>${item('#/report', 'doc', 'تقرير للمالك')}
     <div style="margin-top:auto;border-top:1px dashed var(--line);padding:8px 0 18px">${item('#/archive', 'archive', 'الأرشيف')}${item('#/settings', 'cog', 'الإعدادات')}</div>
   </nav>`;
   d.addEventListener('click', e => { if (e.target.closest('a[href]')) closeMenu(); });
