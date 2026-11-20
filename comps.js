@@ -306,6 +306,11 @@ export const captureActions = {
       if (m && ta.isConnected) {
         try { if (await saveMoney(m.type, formOf(sheetEl()), m.note || ta.value.trim())) { closeSheet(); refresh(); } } catch (e) { fail(e); }
       }
+    }, () => {   // مايك الموقع علّق؟ نفتح الكيبورد عشان تتكلم من المايك بتاعه
+      if (!ta.isConnected) return;
+      const h = document.getElementById('cap-hint');
+      if (h) h.innerHTML = '<b>المايك مسمعش.</b> دوس على المايك اللي في الكيبورد تحت واتكلم، وبعدين دوس حفظ';
+      ta.focus();
     });
     if (!rec) { ta.focus(); toast('دوس على مايك الكيبورد واتكلم'); }
   },

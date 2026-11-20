@@ -104,18 +104,15 @@ export function toast(msg, undo) {
 export function fail(e) { console.error(e); toast('ما اتحفظش: ' + (e?.message || 'حصلت مشكلة، جرب تاني')); }
 
 // ---------- الكتابة بالصوت ----------
-// "ودن" واحدة بس للتطبيق كله، بنستخدمها كل مرة بدل ما نعمل واحدة جديدة.
-// ده بيخلي الآيفون ميسألش عن المايك كل شوية، وبيمنع إن التسجيل التاني يفتح المايك من غير ما يكتب.
-let SR = null, busy = false, owner = null;
-function ear() {
-  if (SR) return SR;
-  const R = window.SpeechRecognition || window.webkitSpeechRecognition;
-  SR = new R(); SR.lang = 'ar-EG'; SR.interimResults = true; SR.continuous = true;
-  SR.onstart = () => { busy = true; owner?.onstart(); };
-  SR.onresult = e => owner?.onresult(e);
-  SR.onerror = e => owner?.onerror(e);
-  SR.onend = () => { busy = false; const o = owner; o ? o.onend() : null; };
-  return SR;
+// الآيفون فيه عيب معروف: المايك بتاع المواقع ساعات يشتغل أول مرة بس، والمرات اللي بعدها يفتح ومايسمعش.
+// اللي بيساعد: "ودن" جديدة خالص كل مرة، ونرمي القديمة كويس، ومنستخدمش وضع "اسمع على طول" على الآيفون.
+// ولو برضه مسمعش حاجة في أول 6 ثواني، بنقولك تستخدم مايك الكيبورد (ده دايمًا شغال).
+const IOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+let current = null;
+function kill(r) {
+  if (!r) return;
+  r.onstart = r.onresult = r.onerror = r.onend = null;
+  try { r.abort(); } catch (_) {}
 }
 // الآيفون ساعات بيرجّع نفس الجملة وهي بتكبر ("أكلت" ثم "أكلت ب 300")، فبناخد آخر نسخة بس
 function textOf(results) {
@@ -128,48 +125,49 @@ function textOf(results) {
   }
   return parts.join(' ');
 }
-export function dictate(onText, onState) {
-  if (!(window.SpeechRecognition || window.webkitSpeechRecognition)) return null;
-  const r = ear();
-  if (owner) owner.finish();   // لو في تسجيل قديم لسه شغال، بنقفله الأول
-  let want = true, base = '', cur = '', restarts = 0, done = false, started = false, safety;
+export function dictate(onText, onState, onDeaf) {
+  const R = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!R) return null;
+  if (current) current.finish();   // لو في تسجيل قديم لسه شغال، بنقفله الأول
+  let want = true, base = '', cur = '', heard = false, done = false, r = null, restarts = 0, watchdog;
+  const text = () => (base + ' ' + cur).trim();
   const me = {
-    onstart() { started = true; },
-    onresult(e) { cur = textOf(e.results); restarts = 0; onText((base + ' ' + cur).trim()); },
-    onerror(ev) { if (['not-allowed', 'service-not-allowed', 'audio-capture'].includes(ev.error)) { want = false; if (ev.error !== 'audio-capture') toast('اسمح للتطبيق يستخدم المايك من الإعدادات'); } },
-    onend() {
-      if (!started) return;   // ده قفل التسجيل القديم، مش بتاعنا
-      started = false;
-      if (want && restarts < 20) {   // الموبايل قفل بعد سكتة؟ نكمّل على الكلام اللي فات
-        restarts++; base = (base + ' ' + cur).trim(); cur = '';
-        setTimeout(() => { if (want && owner === me) go(); }, 150);
-        return;
-      }
-      me.finish();
-    },
     finish() {
-      if (done) return; done = true; want = false; clearTimeout(safety);
-      if (owner === me) owner = null;
-      onState(false, (base + ' ' + cur).trim());
+      if (done) return; done = true; want = false; clearTimeout(watchdog);
+      kill(r); r = null;
+      if (current === me) current = null;
+      onState(false, text());
     },
   };
   const go = () => {
-    try { r.start(); }
-    catch (e) {   // لسه مقفلتش من المرة اللي فاتت: نقفلها ونستنى شوية ونجرب تاني
-      try { r.abort(); } catch (_) {}
-      setTimeout(() => { if (owner !== me || !want) return; try { r.start(); } catch (e2) { me.finish(); toast('المايك مش راضي يفتح، جرب تاني'); } }, 400);
-    }
+    kill(r);
+    r = new R(); r.lang = 'ar-EG'; r.interimResults = true; r.continuous = !IOS; r.maxAlternatives = 1;
+    r.onresult = e => { heard = true; clearTimeout(watchdog); cur = textOf(e.results); restarts = 0; onText(text()); };
+    r.onerror = ev => {
+      if (['not-allowed', 'service-not-allowed'].includes(ev.error)) { want = false; toast('اسمح للتطبيق يستخدم المايك من الإعدادات'); }
+      if (ev.error === 'audio-capture') want = false;
+    };
+    r.onend = () => {   // الآيفون بيقفل بعد كل جملة، فبنفتح ودن جديدة ونكمّل على الكلام اللي فات
+      if (!want || current !== me) return me.finish();
+      base = text(); cur = '';
+      if (restarts++ < 30) setTimeout(() => { if (want && current === me) go(); }, 120);
+      else me.finish();
+    };
+    try { r.start(); } catch (e) { me.finish(); toast('المايك مش راضي يفتح، جرب تاني'); }
   };
-  owner = me;
-  if (busy) { try { r.abort(); } catch (_) {} setTimeout(() => owner === me && want && go(), 400); }
-  else go();
+  current = me;
+  go();
   onState(true);
+  watchdog = setTimeout(() => {
+    if (heard || done) return;
+    me.finish();
+    if (onDeaf) onDeaf(); else toast('المايك مش سامع حاجة. دوس مايك الكيبورد واتكلم');
+  }, 6000);
   return {
     stop() {
       want = false;
-      try { r.stop(); } catch (_) {}
-      // لو الموبايل منسيش يقول "خلصت"، بنقفل احنا بعد ثانية ونص
-      safety = setTimeout(() => { try { r.abort(); } catch (_) {} busy = false; me.finish(); }, 1500);
+      try { r && r.stop(); } catch (_) {}
+      setTimeout(() => me.finish(), 1200);   // لو الموبايل منسيش يقول "خلصت"، بنقفل احنا
     },
   };
 }
