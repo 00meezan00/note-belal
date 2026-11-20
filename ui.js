@@ -72,13 +72,19 @@ export function unlockScroll() {
 const root = () => document.getElementById('sheet-root');
 export function openSheet(title, body) {
   const r = root();
+  clearTimeout(closeT); r.classList.remove('closing');
   r.querySelector('.sheet').innerHTML = `<div class="hd"><h2>${title}</h2><button class="rb" data-act="close-sheet" aria-label="قفل">${ic('x', 20)}</button></div>${body}`;
   if (r.hidden) lockScroll();
   r.hidden = false;
   const f = r.querySelector('[autofocus]'); if (f) setTimeout(() => f.focus(), 50);
   return r.querySelector('.sheet');
 }
-export function closeSheet() { const r = root(); if (r.hidden) return; r.hidden = true; unlockScroll(); }
+let closeT;
+export function closeSheet() {
+  const r = root(); if (r.hidden || r.classList.contains('closing')) return;
+  r.classList.add('closing');
+  closeT = setTimeout(() => { r.hidden = true; r.classList.remove('closing'); unlockScroll(); }, matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 190);
+}
 export const sheetEl = () => root().querySelector('.sheet');
 export function formOf(el) {
   const o = {};

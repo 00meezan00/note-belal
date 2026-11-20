@@ -7,11 +7,13 @@
   color-scheme:light;
 }
 @media (prefers-color-scheme:dark){:root:not([data-theme=light]){
-  --mat:#0F1519;--dot:#1C252B;--paper:#182128;--ink:#E8EEF2;--mut:#9AA8B2;--line:#2A363E;
-  --amb-soft:#4A3A10;--ok:#3DBE7A;--bad:#F06070;--empty:#26313A;--dock:#05090B;--on-ink:#0F1519;color-scheme:dark}}
+  --mat:#13221F;--dot:#1D312D;--paper:#1A2C28;--ink:#E7EFE9;--mut:#9DB2AA;--line:#2C433D;
+  --amb:#F5B32E;--amb-soft:#4A3B12;--ok:#52CE8F;--bad:#FF7F7F;--empty:#24392F;--dock:#0B1614;--on-ink:#13221F;
+  --shadow:0 2px 0 #0B1614;color-scheme:dark}}
 :root[data-theme=dark]{
-  --mat:#0F1519;--dot:#1C252B;--paper:#182128;--ink:#E8EEF2;--mut:#9AA8B2;--line:#2A363E;
-  --amb-soft:#4A3A10;--ok:#3DBE7A;--bad:#F06070;--empty:#26313A;--dock:#05090B;--on-ink:#0F1519;color-scheme:dark}
+  --mat:#13221F;--dot:#1D312D;--paper:#1A2C28;--ink:#E7EFE9;--mut:#9DB2AA;--line:#2C433D;
+  --amb:#F5B32E;--amb-soft:#4A3B12;--ok:#52CE8F;--bad:#FF7F7F;--empty:#24392F;--dock:#0B1614;--on-ink:#13221F;
+  --shadow:0 2px 0 #0B1614;color-scheme:dark}
 
 *{box-sizing:border-box;min-width:0;-webkit-tap-highlight-color:transparent}
 html,body{margin:0}
@@ -153,13 +155,17 @@ a.card,button.card{cursor:pointer;text-align:start;width:100%}
 
 /* sheet */
 #sheet-root{position:fixed;inset:0;z-index:30;display:flex;align-items:flex-end;justify-content:center}
-.sheet-back{position:absolute;inset:0;background:rgba(21,32,43,.55)}
-.sheet{position:relative;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;background:var(--paper);width:100%;max-width:560px;max-height:92vh;overflow:auto;border-radius:26px 26px 0 0;padding:10px 18px calc(24px + var(--safe-b));display:flex;flex-direction:column;gap:14px;animation:up .2s ease-out}
+.sheet-back{position:absolute;inset:0;background:rgba(10,18,16,.55);animation:fade .25s ease both}
+.sheet{position:relative;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;background:var(--paper);width:100%;max-width:560px;max-height:92vh;overflow:auto;border-radius:26px 26px 0 0;padding:10px 18px calc(24px + var(--safe-b));display:flex;flex-direction:column;gap:14px;animation:up .32s cubic-bezier(.2,.9,.25,1) both}
 .sheet::before{content:"";width:44px;height:5px;border-radius:3px;background:var(--line);align-self:center;flex:none}
 .sheet .hd{display:flex;align-items:center;justify-content:space-between}
 .sheet .hd h2{margin:0;font-family:"Reem Kufi",system-ui,sans-serif;font-weight:600;font-size:24px}
-@keyframes up{from{transform:translateY(30px);opacity:.5}}
-@media (prefers-reduced-motion:reduce){.sheet{animation:none}}
+@keyframes up{from{transform:translateY(100%)}}
+@keyframes fade{from{opacity:0}}
+#sheet-root.closing .sheet{animation:down .2s cubic-bezier(.4,0,1,1) both}
+#sheet-root.closing .sheet-back{animation:fade .2s ease reverse both}
+@keyframes down{to{transform:translateY(100%)}}
+@media (prefers-reduced-motion:reduce){.sheet,.sheet-back,#sheet-root.closing .sheet{animation:none}}
 
 /* drawer */
 .drawer{position:fixed;inset:0;z-index:30;overscroll-behavior:contain}
@@ -199,4 +205,46 @@ a.card,button.card{cursor:pointer;text-align:start;width:100%}
   #print-area h2{font:600 14pt "Reem Kufi",sans-serif;margin:16px 0 4px;border-bottom:1px solid #ccc;padding-bottom:3px}
   #print-area p{margin:2px 0}
   #dock,#top,.fab,#toast{display:none!important}
+}
+
+/* ---------- الحركة: تنقل ناعم وسريع ---------- */
+#progress{position:fixed;top:0;right:0;left:0;height:calc(3px + var(--safe-t));background:linear-gradient(to bottom,transparent calc(100% - 3px),var(--amb) 0);transform-origin:right;transform:scaleX(0);opacity:0;z-index:60;pointer-events:none}
+#progress.on{opacity:1;transform:scaleX(.7);transition:transform 1.2s cubic-bezier(.1,.7,.2,1),opacity .1s}
+#progress.done{opacity:0;transform:scaleX(1);transition:transform .2s ease,opacity .25s .1s}
+#main{view-transition-name:main}
+#top{view-transition-name:top}
+#dock{view-transition-name:dock}
+::view-transition-old(root),::view-transition-new(root){animation:none}
+::view-transition-old(dock),::view-transition-new(dock){animation:none}
+::view-transition-old(top){animation:vt-fade-out .14s ease both}
+::view-transition-new(top){animation:vt-fade-in .2s ease both}
+::view-transition-group(main){animation-duration:.26s;animation-timing-function:cubic-bezier(.2,.8,.2,1)}
+::view-transition-old(main){animation:vt-fade-out .14s ease both}
+::view-transition-new(main){animation:vt-fade-in .22s cubic-bezier(.2,.8,.2,1) both}
+html[data-nav=forward]::view-transition-old(main){animation:vt-out-right .2s cubic-bezier(.4,0,1,1) both}
+html[data-nav=forward]::view-transition-new(main){animation:vt-in-left .28s cubic-bezier(.2,.8,.2,1) both}
+html[data-nav=back]::view-transition-old(main){animation:vt-out-left .2s cubic-bezier(.4,0,1,1) both}
+html[data-nav=back]::view-transition-new(main){animation:vt-in-right .28s cubic-bezier(.2,.8,.2,1) both}
+@keyframes vt-fade-out{to{opacity:0}}
+@keyframes vt-fade-in{from{opacity:0}}
+@keyframes vt-in-left{from{opacity:0;transform:translateX(-28px)}}
+@keyframes vt-in-right{from{opacity:0;transform:translateX(28px)}}
+@keyframes vt-out-right{to{opacity:0;transform:translateX(18px)}}
+@keyframes vt-out-left{to{opacity:0;transform:translateX(-18px)}}
+/* لو المتصفح مش بيدعم View Transitions */
+#main.enter-forward{animation:vt-in-left .26s cubic-bezier(.2,.8,.2,1)}
+#main.enter-back{animation:vt-in-right .26s cubic-bezier(.2,.8,.2,1)}
+#main.enter-tab{animation:vt-fade-in .2s ease}
+/* إحساس الضغط */
+a.card,button.card,.btn,.rb,.lnk,.chk,.star,.seg button,.pills button,.types button,#dock a,#dock .mic button,.stg{transition:transform .14s cubic-bezier(.2,.8,.2,1),background-color .2s,color .2s,border-color .2s}
+a.card:active,button.card:active,.lnk:active{transform:scale(.985)}
+.btn:active,.rb:active,.chk:active,.star:active,.seg button:active,.pills button:active,.types button:active,.stg:active{transform:scale(.94)}
+#dock a:active{transform:scale(.9)}
+#dock .mic button:active{transform:scale(.92)}
+.bat .body i{transition:background-color .35s ease}
+.switch::after{transition:transform .2s cubic-bezier(.2,.8,.2,1)}
+@media (prefers-reduced-motion:reduce){
+  ::view-transition-group(*),::view-transition-old(*),::view-transition-new(*){animation:none!important}
+  #main.enter-forward,#main.enter-back,#main.enter-tab{animation:none}
+  *{transition:none!important}
 }

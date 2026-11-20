@@ -44,27 +44,82 @@ function renderTop(v) {
     ${v.right || ''}${v.noSearch ? '' : `<a href="#/search" class="rb" aria-label="بحث">${ic('search', 21)}</a>`}`;
 }
 
-let renderSeq = 0;
-async function render() {
+// ---------- التنقل السريع: بنعرض آخر نسخة من الصفحة فورًا، وبنجيب الجديد في الخلفية ----------
+const viewCache = new Map();
+const NOCACHE = new Set(['money', 'flow', 'debts', 'investments', 'networth', 'search']);   // فلوسي مش بتتخزن
+const TABS = ['today', 'goals', 'team', 'company'];
+const scrollPos = new Map();
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const keyOf = () => location.hash && location.hash !== '#' ? location.hash : '#/today';
+const depthOf = p => p.id ? 2 : TABS.includes(p.name) ? 0 : 1;
+let lastDepth = 0, renderSeq = 0, progT;
+
+function progress(on) {
+  const b = document.getElementById('progress');
+  clearTimeout(progT);
+  if (on) progT = setTimeout(() => { b.className = 'on'; }, 120);
+  else if (b.className === 'on') { b.className = 'done'; progT = setTimeout(() => (b.className = ''), 250); }
+}
+function paint(v, screen, dir, animate) {
+  const main = $('#main');
+  const apply = () => {
+    renderTop(v);
+    main.innerHTML = v.html + (v.fab ? `<button class="fab" data-act="${v.fab.act}" ${v.fab.attrs || ''}>${ic('plus', 20)}${esc(v.fab.label)}</button>` : '');
+    renderDock(screen.dock);
+    const y = dir === 'back' ? scrollPos.get(keyOf()) || 0 : animate ? 0 : null;
+    if (y !== null) window.scrollTo(0, y);
+  };
+  if (!animate || reduced) { apply(); return Promise.resolve(); }
+  if (document.startViewTransition) {
+    document.documentElement.dataset.nav = dir;
+    const t = document.startViewTransition(apply);
+    t.ready.catch(() => {}); t.finished.catch(() => {});
+    return t.updateCallbackDone.catch(() => {});
+  }
+  apply();
+  main.classList.remove('enter-forward', 'enter-back', 'enter-tab'); void main.offsetWidth; main.classList.add('enter-' + dir);
+  return Promise.resolve();
+}
+
+async function render({ refresh = false } = {}) {
   const p = parseHash();
   const screen = SCREENS[p.name] || SCREENS.today;
   current = { screen, params: p };
-  const seq = ++renderSeq;
+  const key = keyOf(), seq = ++renderSeq;
+  const d = depthOf(p), dir = refresh ? 'none' : d > lastDepth ? 'forward' : d < lastDepth ? 'back' : 'tab';
+  if (!refresh) lastDepth = d;
+  const canCache = !NOCACHE.has(p.name);
+  const cached = !refresh && canCache && viewCache.get(key);
+  if (cached) await paint(cached, screen, dir, true);
+  else if (!refresh) progress(true);
   try {
     const v = await screen.render(p);
     if (seq !== renderSeq) return;
-    renderTop(v);
-    const main = $('#main');
-    main.innerHTML = v.html + (v.fab ? `<button class="fab" data-act="${v.fab.act}" ${v.fab.attrs || ''}>${ic('plus', 20)}${esc(v.fab.label)}</button>` : '');
-    renderDock(screen.dock);
-    screen.after && screen.after(main, p);
-    fillLinks(main);
+    progress(false);
+    if (canCache) viewCache.set(key, v);
+    const same = cached && cached.html === v.html && cached.title === v.title && cached.sub === v.sub && cached.fab?.label === v.fab?.label;
+    if (!same) {
+      const a = document.activeElement, main = $('#main');
+      const typing = cached && a && main.contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName);
+      if (!typing) await paint(v, screen, dir, !cached && !refresh);
+    }
+    screen.after && screen.after($('#main'), p);
+    fillLinks($('#main'));
   } catch (e) {
-    console.error(e);
-    $('#main').innerHTML = `<div class="empty" style="margin-top:20px">ما قدرتش أحمّل الصفحة. اتأكد من النت وجرّب تاني.<br><button class="btn sm" style="margin-top:10px" onclick="location.reload()">حمّل تاني</button></div>`;
+    console.error(e); progress(false);
+    if (!cached) $('#main').innerHTML = `<div class="empty" style="margin-top:20px">ما قدرتش أحمّل الصفحة. اتأكد من النت وجرّب تاني.<br><button class="btn sm" style="margin-top:10px" onclick="location.reload()">حمّل تاني</button></div>`;
   }
 }
-setRefresh(render);
+setRefresh(() => render({ refresh: true }));
+
+// بنجهز التبويبات الأساسية في الخلفية عشان تفتح على طول
+async function prefetchTabs() {
+  for (const name of TABS) {
+    const key = '#/' + name;
+    if (viewCache.has(key) || keyOf() === key) continue;
+    try { viewCache.set(key, await SCREENS[name].render({ name, id: undefined, query: {} })); } catch (e) {}
+  }
+}
 
 // ---------- التعامل مع الضغطات ----------
 function findAction(name) { return current?.screen.actions?.[name] || GLOBAL[name]; }
@@ -93,7 +148,10 @@ document.addEventListener('change', e => {
   const el = e.target.closest('[data-change]'); if (!el) return;
   const fn = findAction(el.dataset.change); fn && fn(el, current?.params);
 });
-window.addEventListener('hashchange', () => { closeSheet(); closeMenu(); render(); window.scrollTo(0, 0); });
+window.addEventListener('hashchange', e => {
+  try { scrollPos.set(new URL(e.oldURL).hash || '#/today', window.scrollY); } catch (_) {}
+  closeSheet(); closeMenu(); render();
+});
 
 // ---------- القائمة الجانبية ----------
 function openMenu() {
@@ -157,7 +215,7 @@ function welcome(company) {
       await upsert('company', { name: v.name || 'Fix Team', branches: v.branches || null, status_text: v.status_text || null }, 'user_id');
       const s = await auth.session();
       await upsert('profiles', { user_id: s.user.id, onboarded: true }, 'user_id');
-      location.hash = '#/today'; render();
+      location.hash = '#/today'; await render(); setTimeout(prefetchTabs, 600);
     } catch (err) { fail(err); }
   };
 }
@@ -170,12 +228,13 @@ async function start() {
   const s = await auth.session();
   if (!s) return authScreen();
   try {
-    await rpc('seed_my_defaults');
-    const prof = await single('profiles');
+    let prof = await single('profiles');
+    if (!prof) { await rpc('seed_my_defaults'); prof = await single('profiles'); }
     applyTheme(prof?.theme);
     if (!prof?.onboarded) return welcome(await single('company'));
     rpc('spawn_recurring').catch(() => {});
-    render();
+    await render();
+    setTimeout(prefetchTabs, 600);
   } catch (e) { fail(e); render(); }
 }
 
