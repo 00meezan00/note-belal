@@ -116,17 +116,23 @@ async function beat(env, userId) {
     body: JSON.stringify({ user_id: userId, key: 'cron:last', created_at: new Date().toISOString() }) });
 }
 async function checkUser(env, uid) {
-  const out = { now: null, lastRun: null, tasks: [], errors: [] };
+  // كل جزء في الفحص لوحده: لو واحد وقع، الباقي بيكمل
+  const out = { now: null, lastRun: null, lastRunKnown: true, tasks: [], tasksKnown: true, errors: [] };
+  let date = null;
   try {
     const [p] = await db(env, `profiles?select=timezone&user_id=eq.${uid}`);
-    const { date, minutes } = localNow(p?.timezone || 'Africa/Cairo');
-    out.now = `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+    const t = localNow(p?.timezone || 'Africa/Cairo'); date = t.date;
+    out.now = `${String(Math.floor(t.minutes / 60)).padStart(2, '0')}:${String(t.minutes % 60).padStart(2, '0')}`;
+  } catch (e) { out.errors.push('الساعة: ' + String(e.message || e).slice(0, 200)); date = localNow('Africa/Cairo').date; }
+  try {
     const [b] = await db(env, `reminder_log?select=created_at&user_id=eq.${uid}&key=eq.cron:last`);
     out.lastRun = b ? b.created_at : null;
+  } catch (e) { out.lastRunKnown = false; out.errors.push('سجل التذكيرات: ' + String(e.message || e).slice(0, 200)); }
+  try {
     const ts = await db(env, `tasks?select=id,title,reminder_time&user_id=eq.${uid}&done=eq.false&archived_at=is.null&due_on=eq.${date}&reminder_time=not.is.null&order=reminder_time`);
-    const sent = new Set((await db(env, `reminder_log?select=key&user_id=eq.${uid}&key=like.task:*`)).map(x => x.key));
+    const sent = new Set((await db(env, `reminder_log?select=key&user_id=eq.${uid}&key=like.task:*`).catch(() => [])).map(x => x.key));
     out.tasks = ts.map(t => ({ title: t.title, time: t.reminder_time.slice(0, 5), sent: sent.has(`task:${t.id}:${date}:${t.reminder_time.slice(0, 5)}`) }));
-  } catch (e) { out.errors.push(String(e.message || e)); }
+  } catch (e) { out.tasksKnown = false; out.errors.push('المهام: ' + String(e.message || e).slice(0, 200)); }
   for (const [label, path] of [['الأهداف', `goals?select=id,reminder_time,reminder_enabled&user_id=eq.${uid}&limit=1`], ['الكورسات', `courses?select=id,schedule,remind_before,schedule_until&user_id=eq.${uid}&limit=1`]]) {
     try { await db(env, path); } catch (e) { out.errors.push(`${label}: ${String(e.message || e).slice(0, 200)}`); }
   }
