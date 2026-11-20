@@ -104,31 +104,72 @@ export function toast(msg, undo) {
 export function fail(e) { console.error(e); toast('ما اتحفظش: ' + (e?.message || 'حصلت مشكلة، جرب تاني')); }
 
 // ---------- الكتابة بالصوت ----------
-export function dictate(onText, onState) {
+// "ودن" واحدة بس للتطبيق كله، بنستخدمها كل مرة بدل ما نعمل واحدة جديدة.
+// ده بيخلي الآيفون ميسألش عن المايك كل شوية، وبيمنع إن التسجيل التاني يفتح المايك من غير ما يكتب.
+let SR = null, busy = false, owner = null;
+function ear() {
+  if (SR) return SR;
   const R = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!R) return null;
-  // بيفضل يسمع لحد ما تدوس وقف: لو الموبايل قفل التسجيل بعد سكتة، بيبدأ تاني لوحده ويكمّل على الكلام اللي فات
-  let want = true, finals = '', r = null, restarts = 0;
-  const begin = () => {
-    r = new R();
-    r.lang = 'ar-EG'; r.interimResults = true; r.continuous = true;
-    r.onresult = e => {
-      let interim = '';
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const res = e.results[i];
-        if (res.isFinal) finals += res[0].transcript.trim() + ' ';
-        else interim += res[0].transcript;
+  SR = new R(); SR.lang = 'ar-EG'; SR.interimResults = true; SR.continuous = true;
+  SR.onstart = () => { busy = true; owner?.onstart(); };
+  SR.onresult = e => owner?.onresult(e);
+  SR.onerror = e => owner?.onerror(e);
+  SR.onend = () => { busy = false; const o = owner; o ? o.onend() : null; };
+  return SR;
+}
+// الآيفون ساعات بيرجّع نفس الجملة وهي بتكبر ("أكلت" ثم "أكلت ب 300")، فبناخد آخر نسخة بس
+function textOf(results) {
+  const parts = [];
+  for (let i = 0; i < results.length; i++) {
+    const t = results[i][0].transcript.trim(); if (!t) continue;
+    const prev = parts[parts.length - 1];
+    if (prev && t.startsWith(prev)) parts[parts.length - 1] = t;
+    else if (!prev || !prev.startsWith(t)) parts.push(t);
+  }
+  return parts.join(' ');
+}
+export function dictate(onText, onState) {
+  if (!(window.SpeechRecognition || window.webkitSpeechRecognition)) return null;
+  const r = ear();
+  if (owner) owner.finish();   // لو في تسجيل قديم لسه شغال، بنقفله الأول
+  let want = true, base = '', cur = '', restarts = 0, done = false, started = false, safety;
+  const me = {
+    onstart() { started = true; },
+    onresult(e) { cur = textOf(e.results); restarts = 0; onText((base + ' ' + cur).trim()); },
+    onerror(ev) { if (['not-allowed', 'service-not-allowed', 'audio-capture'].includes(ev.error)) { want = false; if (ev.error !== 'audio-capture') toast('اسمح للتطبيق يستخدم المايك من الإعدادات'); } },
+    onend() {
+      if (!started) return;   // ده قفل التسجيل القديم، مش بتاعنا
+      started = false;
+      if (want && restarts < 20) {   // الموبايل قفل بعد سكتة؟ نكمّل على الكلام اللي فات
+        restarts++; base = (base + ' ' + cur).trim(); cur = '';
+        setTimeout(() => { if (want && owner === me) go(); }, 150);
+        return;
       }
-      restarts = 0;
-      onText((finals + interim).trim());
-    };
-    r.onerror = ev => { if (['not-allowed', 'service-not-allowed', 'audio-capture'].includes(ev.error)) want = false; };
-    r.onend = () => {
-      if (want && restarts < 20) { restarts++; try { begin(); return; } catch (e) { want = false; } }
-      onState(false, finals.trim());
-    };
-    r.start();
+      me.finish();
+    },
+    finish() {
+      if (done) return; done = true; want = false; clearTimeout(safety);
+      if (owner === me) owner = null;
+      onState(false, (base + ' ' + cur).trim());
+    },
   };
-  begin(); onState(true);
-  return { stop() { want = false; try { r && r.stop(); } catch (e) { onState(false, finals.trim()); } } };
+  const go = () => {
+    try { r.start(); }
+    catch (e) {   // لسه مقفلتش من المرة اللي فاتت: نقفلها ونستنى شوية ونجرب تاني
+      try { r.abort(); } catch (_) {}
+      setTimeout(() => { if (owner !== me || !want) return; try { r.start(); } catch (e2) { me.finish(); toast('المايك مش راضي يفتح، جرب تاني'); } }, 400);
+    }
+  };
+  owner = me;
+  if (busy) { try { r.abort(); } catch (_) {} setTimeout(() => owner === me && want && go(), 400); }
+  else go();
+  onState(true);
+  return {
+    stop() {
+      want = false;
+      try { r.stop(); } catch (_) {}
+      // لو الموبايل منسيش يقول "خلصت"، بنقفل احنا بعد ثانية ونص
+      safety = setTimeout(() => { try { r.abort(); } catch (_) {} busy = false; me.finish(); }, 1500);
+    },
+  };
 }

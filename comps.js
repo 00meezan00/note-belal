@@ -234,6 +234,7 @@ export function parseMoney(text, cats = []) {
 // ---------------- التسجيل السريع (زرار المايك) ----------------
 let rec = null;
 export async function openCapture() {
+  if (rec) { rec.stop(); rec = null; }   // لو كان في تسجيل قديم شغال، نقفله
   const [members, cats] = await Promise.all([
     list('team_members', { eq: { active: true }, order: 'name' }).catch(() => []),
     list('budget_categories', { order: 'sort' }).catch(() => []),
@@ -292,15 +293,17 @@ export const captureActions = {
     const ta = sheetEl().querySelector('[name=text]');
     if (rec) { rec.stop(); return; }
     const pre = ta.value.trim() ? ta.value.trim() + ' ' : '';
-    rec = dictate(t => { ta.value = pre + t; readMoney(); }, async live => {
+    let me = null;
+    me = rec = dictate(t => { if (ta.isConnected) { ta.value = pre + t; readMoney(); } }, async live => {
+      if (!ta.isConnected) { if (!live && rec === me) rec = null; return; }   // الشاشة دي اتقفلت خلاص
       el.classList.toggle('live', live);
       const h = document.getElementById('cap-hint');
       if (h) h.textContent = live ? 'بسمعك… دوس على المايك تاني لما تخلص' : 'تمام، راجع الكلام واحفظ';
       if (live) return;
-      rec = null;
+      if (rec === me) rec = null;
       // قلت مبلغ؟ بيتسجل على طول في فلوسي، ولو غلط دوس "تراجع"
       const m = readMoney();
-      if (m && sheetEl().querySelector('[name=text]')) {
+      if (m && ta.isConnected) {
         try { if (await saveMoney(m.type, formOf(sheetEl()), m.note || ta.value.trim())) { closeSheet(); refresh(); } } catch (e) { fail(e); }
       }
     });
