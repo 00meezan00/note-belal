@@ -161,11 +161,11 @@ export default {
           const { data } = await sb.auth.getSession();
           let r;
           try { r = await fetch(WORKER_URL.replace(/\/$/, '') + '/test', { method: 'POST', headers: { Authorization: `Bearer ${data.session.access_token}` } }); }
-          catch (_) { return toast('ما قدرتش أوصل للـ Worker. اتأكد من WORKER_URL في config.js'); }
-          if (r.ok) toast('اتبعت. هيوصلك إشعار كمان ثواني');
-          else if (r.status === 404) toast('الإشعار ما وصلش. اتأكد إن VAPID_PUBLIC و VAPID_PRIVATE في Cloudflare صح');
-          else if (r.status === 401) toast('الـ Worker مش عارف حسابك. اتأكد من SUPABASE_URL و SUPABASE_SERVICE_KEY في Cloudflare');
-          else toast(`الـ Worker رد بخطأ ${r.status}. اتأكد من المتغيرات الخمسة في Cloudflare`);
+          catch (_) { return alertBox('ما قدرتش أوصل للـ Worker', 'الأغلب إن الـ Worker القديم لسه على Cloudflare. حط كود reminders.js الجديد فيه ودوس Deploy.'); }
+          if (r.ok) return toast('اتبعت. هيوصلك إشعار كمان ثواني');
+          const why = await r.json().then(x => x.error).catch(() => '');
+          if (r.status === 401) toast('الـ Worker مش عارف حسابك. اتأكد من SUPABASE_URL و SUPABASE_SERVICE_KEY في Cloudflare');
+          else alertBox(`الإشعار ما وصلش (${r.status})`, why || 'مفيش تفاصيل');
         } catch (e) { toast(e.message || 'حصل خطأ'); } finally { el.disabled = false; }
       },
       async backup() {
@@ -187,6 +187,12 @@ export default {
 };
 
 function b64u(s) { const p = '='.repeat((4 - s.length % 4) % 4); const b = atob((s + p).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from(b, c => c.charCodeAt(0)); }
+
+// رسالة فيها السبب بالتفصيل، بتفضل ظاهرة لحد ما تقفلها (عشان تقدر تصوّرها)
+function alertBox(title, msg) {
+  openSheet(title, `<div class="card" style="direction:ltr;text-align:left;font-size:13px;white-space:pre-wrap;word-break:break-word">${esc(msg)}</div>
+    <div class="btns"><button class="btn pri" data-act="close-sheet">تمام</button></div>`);
+}
 
 // بيحفظ اشتراك الموبايل ده في Supabase عشان الـ Worker يعرف يبعتله
 async function saveSub(sub) {
