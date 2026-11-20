@@ -13,15 +13,24 @@ export default {
 
   async fetch(req, env) {
     const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Authorization, Content-Type', 'Access-Control-Allow-Methods': 'POST, OPTIONS' };
+    const json = (o, status = 200) => new Response(JSON.stringify(o), { status, headers: { ...cors, 'Content-Type': 'application/json; charset=utf-8' } });
     if (req.method === 'OPTIONS') return new Response(null, { headers: cors });
     const url = new URL(req.url);
     if (url.pathname === '/test' && req.method === 'POST') {
-      const token = (req.headers.get('Authorization') || '').replace('Bearer ', '');
-      const u = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, { headers: { apikey: env.SUPABASE_SERVICE_KEY, Authorization: `Bearer ${token}` } });
-      if (!u.ok) return new Response('unauthorized', { status: 401, headers: cors });
-      const user = await u.json();
-      const n = await sendToUser(env, user.id, { title: 'نوتة بلال', body: 'الإشعارات شغالة. هتوصلك التذكيرات في مواعيدها.', url: './#/settings' });
-      return new Response(JSON.stringify({ sent: n }), { status: n ? 200 : 404, headers: { ...cors, 'Content-Type': 'application/json' } });
+      // أي خطأ هنا بيرجع للتطبيق بسببه، بدل ما الـ Worker يقع ساكت
+      try {
+        const missing = ['SUPABASE_URL', 'SUPABASE_SERVICE_KEY', 'VAPID_PUBLIC', 'VAPID_PRIVATE'].filter(k => !env[k]);
+        if (missing.length) return json({ error: 'ناقص في Cloudflare (Variables and Secrets): ' + missing.join('، ') }, 500);
+        const token = (req.headers.get('Authorization') || '').replace('Bearer ', '');
+        const u = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, { headers: { apikey: env.SUPABASE_SERVICE_KEY, Authorization: `Bearer ${token}` } });
+        if (!u.ok) return json({ error: 'unauthorized: ' + await u.text() }, 401);
+        const user = await u.json();
+        const log = [];
+        const n = await sendToUser(env, user.id, { title: 'نوتة بلال', body: 'الإشعارات شغالة. هتوصلك التذكيرات في مواعيدها.', url: './#/settings' }, log);
+        return n ? json({ sent: n }) : json({ error: log.join('\n') || 'ما اتبعتش' }, 404);
+      } catch (e) {
+        return json({ error: String(e && e.message || e) }, 500);
+      }
     }
     return new Response('نوتة بلال: Worker التذكيرات شغال', { headers: { ...cors, 'Content-Type': 'text/plain; charset=utf-8' } });
   },
@@ -31,8 +40,9 @@ export default {
 async function runReminders(env) {
   const profiles = await db(env, 'profiles?select=user_id,display_name,timezone,morning_reminder,morning_enabled,evening_reminder,evening_enabled');
   for (const p of profiles) {
-    const { date, minutes } = localNow(p.timezone || 'Africa/Cairo');
-    const due = t => { if (!t) return false; const [h, m] = t.split(':').map(Number); const tm = h * 60 + m; return tm <= minutes && tm > minutes - 15; };
+    const { date, minutes, dow } = localNow(p.timezone || 'Africa/Cairo');
+    const dueMin = tm => tm <= minutes && tm > minutes - 15;
+    const due = t => { if (!t) return false; const [h, m] = t.split(':').map(Number); return dueMin(h * 60 + m); };
     const uid = p.user_id, name = p.display_name || 'بلال';
     const open = await db(env, `tasks?select=id,title,top3_on,reminder_time,due_on&user_id=eq.${uid}&done=eq.false&archived_at=is.null&due_on=lte.${date}`);
 
@@ -58,14 +68,34 @@ async function runReminders(env) {
         await sendToUser(env, uid, { title: 'تذكير', body: t.title, url: './#/today' });
       }
     }
+
+    // مواعيد الكورسات: كل ميعاد = يوم في الأسبوع + ساعة، والتذكير قبله بالوقت اللي اخترته
+    const courses = await db(env, `courses?select=id,title,schedule,remind_before,schedule_until&user_id=eq.${uid}&status=eq.active&archived_at=is.null`).catch(() => []);
+    for (const c of courses) {
+      if (c.schedule_until && c.schedule_until < date) continue;
+      const before = Number(c.remind_before) || 0;
+      for (const s of Array.isArray(c.schedule) ? c.schedule : []) {
+        if (!s || !s.time) continue;
+        const [h, m] = s.time.split(':').map(Number);
+        let tm = h * 60 + m - before, day = Number(s.day);
+        if (tm < 0) { tm += 1440; day = (day + 6) % 7; }   // كورس بعد نص الليل بشوية: التذكير في اليوم اللي قبله
+        if (day !== dow || !dueMin(tm)) continue;
+        if (await claim(env, uid, `course:${c.id}:${date}:${s.day}:${s.time}`)) {
+          await sendToUser(env, uid, { title: 'عندك كورس', body: `${c.title} — ${before ? `كمان ${beforeWord(before)} (الساعة ${fmtTime(s.time)})` : `دلوقتي، الساعة ${fmtTime(s.time)}`}`, url: './#/courses' });
+        }
+      }
+    }
   }
 }
 
 const tasksWord = n => n === 1 ? 'مهمة واحدة' : n === 2 ? 'مهمتين' : n <= 10 ? `${n} مهام` : `${n} مهمة`;
+const beforeWord = m => m === 15 ? 'ربع ساعة' : m === 30 ? 'نص ساعة' : m === 60 ? 'ساعة' : `${m} دقيقة`;
+const fmtTime = t => { const [h, m] = t.split(':').map(Number); return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'ص' : 'م'}`; };
 
 function localNow(tz) {
   const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date()).map(x => [x.type, x.value]));
-  return { date: `${parts.year}-${parts.month}-${parts.day}`, minutes: Number(parts.hour) * 60 + Number(parts.minute) };
+  const date = `${parts.year}-${parts.month}-${parts.day}`;
+  return { date, minutes: Number(parts.hour) * 60 + Number(parts.minute), dow: new Date(date + 'T12:00:00Z').getUTCDay() };
 }
 
 // بيسجل إن التذكير ده اتبعت. لو كان متسجل قبل كده بيرجع false، فمفيش إشعار بيتكرر
@@ -78,13 +108,16 @@ async function claim(env, userId, key) {
   return Array.isArray(rows) && rows.length > 0;
 }
 
-async function sendToUser(env, userId, msg) {
+// log (اختياري): بيتكتب فيه سبب أي إشعار ما وصلش، عشان زرار "جرّب" يعرضه
+async function sendToUser(env, userId, msg, log) {
   const subs = await db(env, `push_subscriptions?select=id,endpoint,p256dh,auth&user_id=eq.${userId}`);
+  if (!subs.length && log) log.push('مفيش موبايل متسجل في push_subscriptions. دوس "فعّل" في التطبيق الأول.');
   let sent = 0;
   for (const s of subs) {
     const res = await webPush(env, s, JSON.stringify(msg));
+    if (res.ok) { sent++; continue; }
+    if (log) log.push(`Apple رد بـ ${res.status}: ${(await res.text()).slice(0, 300)}`);
     if (res.status === 404 || res.status === 410) await fetch(`${env.SUPABASE_URL}/rest/v1/push_subscriptions?id=eq.${s.id}`, { method: 'DELETE', headers: auth(env) });
-    else if (res.ok) sent++;
   }
   return sent;
 }
@@ -108,12 +141,15 @@ const concat = (...a) => { const out = new Uint8Array(a.reduce((n, x) => n + x.l
 async function hmac(key, data) { const k = await crypto.subtle.importKey('raw', key, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']); return new Uint8Array(await crypto.subtle.sign('HMAC', k, data)); }
 
 async function vapidAuth(env, endpoint) {
-  const pub = unb64u(env.VAPID_PUBLIC);
-  const key = await crypto.subtle.importKey('jwk', { kty: 'EC', crv: 'P-256', d: env.VAPID_PRIVATE, x: b64u(pub.slice(1, 33)), y: b64u(pub.slice(33, 65)), ext: true }, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);
+  const pubKey = env.VAPID_PUBLIC.trim(), priv = env.VAPID_PRIVATE.trim();
+  const pub = unb64u(pubKey);
+  let key;
+  try { key = await crypto.subtle.importKey('jwk', { kty: 'EC', crv: 'P-256', d: priv, x: b64u(pub.slice(1, 33)), y: b64u(pub.slice(33, 65)), ext: true }, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']); }
+  catch (e) { throw new Error('VAPID_PRIVATE أو VAPID_PUBLIC في Cloudflare مش مظبوطين: ' + e.message); }
   const head = b64u(enc.encode(JSON.stringify({ typ: 'JWT', alg: 'ES256' })));
-  const body = b64u(enc.encode(JSON.stringify({ aud: new URL(endpoint).origin, exp: Math.floor(Date.now() / 1000) + 12 * 3600, sub: env.VAPID_SUBJECT || 'mailto:admin@example.com' })));
+  const body = b64u(enc.encode(JSON.stringify({ aud: new URL(endpoint).origin, exp: Math.floor(Date.now() / 1000) + 12 * 3600, sub: (env.VAPID_SUBJECT || 'mailto:admin@example.com').trim() })));
   const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, enc.encode(`${head}.${body}`));
-  return `vapid t=${head}.${body}.${b64u(sig)}, k=${env.VAPID_PUBLIC}`;
+  return `vapid t=${head}.${body}.${b64u(sig)}, k=${pubKey}`;
 }
 
 async function encryptPayload(p256dh, authSecret, plaintext) {
