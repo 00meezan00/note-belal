@@ -106,6 +106,25 @@ async function remindUser(env, p) {
       }
     }
     });
+
+    // تذكير الأفكار: الأفكار العادية + أفكار التطوير في المشاريع. كل فكرة ليها يوم + ساعة.
+    // لو الـ Worker فوّت الميعاد لأي سبب، بيبعته أول ما يصحى (لحد يوم بعده)، ومفيش تكرار
+    const since = prevDate(date);
+    for (const [table, kind, title, link] of [['ideas', 'idea', 'تذكير بفكرة', id => `./#/idea/${id}`], ['project_devs', 'dev', 'تذكير بفكرة في مشروع', id => `./#/dev/${id}`]]) {
+      await safe(table, async () => {
+        const rows = await db(env, `${table}?select=id,title,remind_on,remind_time${table === 'project_devs' ? ',project_id' : ''}&user_id=eq.${uid}&archived_at=is.null&remind_on=gte.${since}&remind_on=lte.${date}`);
+        if (!rows.length) return;
+        const names = table === 'project_devs' ? Object.fromEntries((await db(env, `projects?select=id,name&user_id=eq.${uid}`).catch(() => [])).map(x => [x.id, x.name])) : {};
+        for (const r of rows) {
+          const t = (r.remind_time || '10:00').slice(0, 5);
+          const [h, m] = t.split(':').map(Number);
+          if (r.remind_on === date && h * 60 + m > minutes) continue;   // لسه ميعاده مجاش
+          if (await claim(env, uid, `${kind}:${r.id}:${r.remind_on}:${t}`)) {
+            await sendToUser(env, uid, { title: names[r.project_id] ? `${title} · ${names[r.project_id]}` : title, body: r.title, url: link(r.id) });
+          }
+        }
+      });
+    }
   }
 }
 
@@ -133,7 +152,8 @@ async function checkUser(env, uid) {
     const sent = new Set((await db(env, `reminder_log?select=key&user_id=eq.${uid}&key=like.task:*`).catch(() => [])).map(x => x.key));
     out.tasks = ts.map(t => ({ title: t.title, time: t.reminder_time.slice(0, 5), sent: sent.has(`task:${t.id}:${date}:${t.reminder_time.slice(0, 5)}`) }));
   } catch (e) { out.tasksKnown = false; out.errors.push('المهام: ' + String(e.message || e).slice(0, 200)); }
-  for (const [label, path] of [['الأهداف', `goals?select=id,reminder_time,reminder_enabled&user_id=eq.${uid}&limit=1`], ['الكورسات', `courses?select=id,schedule,remind_before,schedule_until&user_id=eq.${uid}&limit=1`]]) {
+  for (const [label, path] of [['الأهداف', `goals?select=id,reminder_time,reminder_enabled&user_id=eq.${uid}&limit=1`], ['الكورسات', `courses?select=id,schedule,remind_before,schedule_until&user_id=eq.${uid}&limit=1`],
+    ['تذكير الأفكار', `ideas?select=id,remind_on,remind_time&user_id=eq.${uid}&limit=1`], ['تذكير أفكار المشاريع', `project_devs?select=id,remind_on,remind_time&user_id=eq.${uid}&limit=1`]]) {
     try { await db(env, path); } catch (e) { out.errors.push(`${label}: ${String(e.message || e).slice(0, 200)}`); }
   }
   return out;
@@ -142,6 +162,7 @@ async function checkUser(env, uid) {
 const tasksWord = n => n === 1 ? 'مهمة واحدة' : n === 2 ? 'مهمتين' : n <= 10 ? `${n} مهام` : `${n} مهمة`;
 const beforeWord = m => m === 15 ? 'ربع ساعة' : m === 30 ? 'نص ساعة' : m === 60 ? 'ساعة' : `${m} دقيقة`;
 const fmtTime = t => { const [h, m] = t.split(':').map(Number); return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'ص' : 'م'}`; };
+const prevDate = d => new Date(Date.parse(d + 'T12:00:00Z') - 864e5).toISOString().slice(0, 10);
 
 function localNow(tz) {
   const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date()).map(x => [x.type, x.value]));
