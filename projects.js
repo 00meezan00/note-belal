@@ -2,6 +2,7 @@
 import { list, one, ins, upd, del } from './db.js';
 import { esc, ic, bat, fd, today, addDays, iso, n, empty, openSheet, closeSheet, sheetEl, formOf, toast, fail, opts } from './ui.js';
 import { stepsBlock, linksSlot, archiveWithUndo, doRefresh, openTask } from './comps.js';
+import { remindField, readRemind, remindCard, remindActions, remindChip } from './remind.js';
 
 export const PKIND = { system: 'سيستم', app: 'تطبيق', program: 'برنامج', game: 'لعبة', other: 'حاجة تانية' };
 export const DSTAGE = [['idea', 'فكرة'], ['plan', 'خطة'], ['building', 'بيتنفذ'], ['applied', 'اتطبق']];
@@ -57,6 +58,7 @@ function projectSheet(p = {}) {
 function devSheet(projectId) {
   openSheet('فكرة تطوير', `<label class="field"><span>التطوير</span><input name="title" autofocus placeholder="مثلًا: تقرير أرباح يومي على الواتساب"></label>
     <label class="field"><span>تفاصيل (اختياري)</span><textarea name="details" rows="3"></textarea></label>
+    ${remindField()}
     <button class="btn pri" data-act="dev-create" data-pid="${projectId}">حفظ</button>`);
 }
 async function clientSheet(projectId, c = {}) {
@@ -163,7 +165,7 @@ export default {
       if (tab === 'devs') {
         const L = devs.filter(d => !st.stage || d.stage === st.stage);
         body = `<div class="pills"><button class="${st.stage ? '' : 'on'}" data-act="ds" data-v="">الكل ${devs.length}</button>${DSTAGE.map(([k, l]) => `<button class="${st.stage === k ? 'on' : ''}" data-act="ds" data-v="${k}">${l} ${devs.filter(d => d.stage === k).length}</button>`).join('')}</div>`
-          + (L.length ? L.map(d => `<a class="card stack" style="gap:8px" href="#/dev/${d.id}"><div class="between" style="align-items:flex-start"><div class="title" style="font-size:15px">${esc(d.title)}</div><span class="tag ${DTAG[d.stage]}">${DSTAGE.find(s => s[0] === d.stage)[1]}</span></div>${d.details ? `<div class="mut">${esc(d.details.slice(0, 100))}</div>` : ''}${d.stage === 'applied' && d.applied_on ? `<div class="mut">اتطبق ${fd(d.applied_on)}</div>` : ''}</a>`).join('')
+          + (L.length ? L.map(d => `<a class="card stack" style="gap:8px" href="#/dev/${d.id}"><div class="between" style="align-items:flex-start"><div class="title" style="font-size:15px">${esc(d.title)}</div><span class="tag ${DTAG[d.stage]}">${DSTAGE.find(s => s[0] === d.stage)[1]}</span></div>${d.details ? `<div class="mut">${esc(d.details.slice(0, 100))}</div>` : ''}${d.stage === 'applied' && d.applied_on ? `<div class="mut">اتطبق ${fd(d.applied_on)}</div>` : ''}${remindChip(d)}</a>`).join('')
             : empty('سجّل أي فكرة تطوير للمشروع ده. هتمشي فكرة، بعدين خطة، بعدين بيتنفذ، بعدين اتطبق.'));
       } else if (tab === 'clients') {
         const row = c => {
@@ -228,6 +230,7 @@ export default {
           <input class="disp" value="${esc(d.title)}" data-change="dev-title" aria-label="اسم التطوير" style="font-size:23px;border:0;background:transparent;padding:0;line-height:1.4">
           <div class="steps-line">${DSTAGE.map(([k, l], j) => `${j ? `<span class="ln${j <= idx ? ' on' : ''}"></span>` : ''}<button class="stg${j < idx ? ' past' : j === idx ? ' on' : ''}" data-act="dev-stage" data-v="${k}">${l}</button>`).join('')}</div>
           ${steps.length ? `<div class="card">${bat(done / steps.length * 100, d.stage === 'applied' ? 'done' : 'run')}</div>` : ''}
+          ${remindCard('dev', d)}
           <label class="card field"><span class="mut">التفاصيل</span><textarea data-change="dev-details" rows="3" style="border:0;padding:0;min-height:60px;background:transparent">${esc(d.details)}</textarea></label>
           ${stepsBlock('project_dev', d.id, steps, 'الخطة')}
           <div class="card"><div class="between"><b style="font-weight:600">ملاحظات وتعديلات من التجربة</b></div>
@@ -242,6 +245,7 @@ export default {
       };
     },
     actions: {
+      ...remindActions,
       async 'dev-stage'(el, p) { try { await upd('project_devs', p.id, { stage: el.dataset.v }); if (el.dataset.v === 'applied') toast('اتطبق. سجّل ملاحظات العملاء تحت عشان تعدّل عليه'); doRefresh(); } catch (e) { fail(e); } },
       async 'dev-title'(el, p) { if (el.value.trim()) try { await upd('project_devs', p.id, { title: el.value.trim() }); toast('اتحفظ'); } catch (e) { fail(e); } },
       async 'dev-details'(el, p) { try { await upd('project_devs', p.id, { details: el.value.trim() || null }); toast('اتحفظ'); } catch (e) { fail(e); } },
@@ -268,7 +272,8 @@ export const projectGlobal = {
   },
   async 'dev-create'(el) {
     const f = formOf(sheetEl()); if (!f.title) return toast('اكتب التطوير');
-    try { await ins('project_devs', { project_id: el.dataset.pid, title: f.title, details: f.details || null }); closeSheet(); doRefresh(); } catch (e) { fail(e); }
+    const r = readRemind();
+    try { await ins('project_devs', { project_id: el.dataset.pid, title: f.title, details: f.details || null, ...r }); closeSheet(); if (r.remind_on) toast('اتحفظت، وهيوصلك تذكير'); doRefresh(); } catch (e) { fail(e); }
   },
   async 'client-save'(el) {
     const s = sheetEl(); const f = formOf(s); if (!f.name) return toast('اكتب اسم العميل');

@@ -3,6 +3,7 @@ import { list, one, ins, upd, rpc, link } from './db.js';
 import { esc, ic, bat, fd, today, dueText, empty, openSheet, closeSheet, sheetEl, formOf, toast, fail, opts, sw, n } from './ui.js';
 import { AREAS, taskRow, openTask, stepsBlock, linksSlot, archiveWithUndo, doRefresh } from './comps.js';
 import { goalCard } from './today.js';
+import { remindField, readRemind, remindSheetActions, remindCard, remindActions, remindChip } from './remind.js';
 
 const STAGES = [['raw', 'خام'], ['developing', 'بتتطور'], ['ready', 'جاهزة']];
 const tabState = { tab: 'active', area: '' };
@@ -18,6 +19,7 @@ function goalSheet(g = {}) {
 function ideaSheet() {
   openSheet('فكرة جديدة', `<label class="field"><span>الفكرة</span><input name="title" autofocus placeholder="اكتبها زي ما هي، هتوسعها بعدين"></label>
     <label class="field"><span>المجال (اختياري)</span><select name="area"><option value="">من غير</option>${opts(AREAS)}</select></label>
+    ${remindField()}
     <button class="btn pri" data-act="idea-create">حفظ</button>`);
 }
 
@@ -134,6 +136,7 @@ export default {
           <input class="disp" value="${esc(i.title)}" data-change="idea-title" aria-label="عنوان الفكرة" style="font-size:23px;border:0;background:transparent;padding:0;line-height:1.4">
           ${i.stage === 'converted' ? `<a class="card row" href="#/goal/${i.converted_goal_id}" style="border-color:var(--ok)">${ic('goal', 20)}<span style="flex:1">الفكرة دي بقت هدف</span>${ic('chev', 18)}</a>` : `
           <div class="steps-line">${STAGES.map(([k, l], j) => `${j ? `<span class="ln${j <= idx ? ' on' : ''}"></span>` : ''}<button class="stg${j < idx ? ' past' : j === idx ? ' on' : ''}" data-act="idea-stage" data-v="${k}">${l}</button>`).join('')}</div>`}
+          ${i.stage === 'converted' ? '' : remindCard('idea', i)}
           <label class="card field"><span class="mut">التفاصيل: ليه؟ هتفيد بإيه؟</span><textarea data-change="idea-body" rows="4" style="border:0;padding:0;min-height:80px;background:transparent">${esc(i.body)}</textarea></label>
           <label class="card field"><span class="mut">محتاجة إيه؟ وإيه المخاطر؟</span><textarea data-change="idea-risks" rows="3" style="border:0;padding:0;min-height:60px;background:transparent">${esc(i.needs_risks)}</textarea></label>
           ${stepsBlock('idea', i.id, steps, 'الخطة المبدئية')}
@@ -145,6 +148,7 @@ export default {
       };
     },
     actions: {
+      ...remindActions,
       async 'idea-stage'(el, p) { try { await upd('ideas', p.id, { stage: el.dataset.v }); doRefresh(); } catch (e) { fail(e); } },
       async 'idea-title'(el, p) { if (el.value.trim()) try { await upd('ideas', p.id, { title: el.value.trim() }); toast('اتحفظ'); } catch (e) { fail(e); } },
       async 'idea-body'(el, p) { try { await upd('ideas', p.id, { body: el.value.trim() || null }); toast('اتحفظ'); } catch (e) { fail(e); } },
@@ -157,12 +161,15 @@ export default {
 };
 
 function ideaCard(i) {
+  const bell = i.stage === 'converted' ? '' : remindChip(i);
   return `<a class="card stack" style="gap:6px" href="#/idea/${i.id}"><div class="between"><span class="chip">${esc(i.area || 'من غير مجال')}</span><span class="mut">${fd(i.created_at)}</span></div>
-    <div class="title">${esc(i.title)}</div>${i.body ? `<div class="mut">${esc(i.body.slice(0, 110))}${i.body.length > 110 ? '…' : ''}</div>` : ''}</a>`;
+    <div class="title">${esc(i.title)}</div>${i.body ? `<div class="mut">${esc(i.body.slice(0, 110))}${i.body.length > 110 ? '…' : ''}</div>` : ''}${bell}</a>`;
 }
 
 // actions الشيتات (بتشتغل من أي شاشة)
 export const goalGlobal = {
+  ...remindSheetActions,
+  ...remindActions,
   async 'goal-save'(el) {
     const f = formOf(sheetEl()); if (!f.title) return toast('اكتب الهدف');
     try {
@@ -173,6 +180,7 @@ export const goalGlobal = {
   },
   async 'idea-create'() {
     const f = formOf(sheetEl()); if (!f.title) return toast('اكتب الفكرة');
-    try { await ins('ideas', { title: f.title, area: f.area || null }); closeSheet(); doRefresh(); } catch (e) { fail(e); }
+    const r = readRemind();
+    try { await ins('ideas', { title: f.title, area: f.area || null, ...r }); closeSheet(); toast(r.remind_on ? 'اتحفظت، وهيوصلك تذكير' : 'اتحفظت'); doRefresh(); } catch (e) { fail(e); }
   },
 };
