@@ -29,6 +29,51 @@ async function problemSheet(p = {}) {
 
 const ARCH_TABLES = [['tasks', 'title', 'مهمة'], ['goals', 'title', 'هدف'], ['ideas', 'title', 'فكرة'], ['problems', 'title', 'مشكلة'], ['team_members', 'name', 'فرد'], ['company_metrics', 'label', 'مؤشر'], ['company_log', 'text', 'تطور'], ['projects', 'name', 'مشروع'], ['project_devs', 'title', 'تطوير في مشروع'], ['project_clients', 'name', 'عميل مشروع'], ['courses', 'title', 'كورس'], ['sops', 'title', 'إجراء'], ['positions', 'title', 'مكان فاضي'], ['candidates', 'name', 'متقدم'], ['recurring_tasks', 'title', 'مهمة متكررة'], ['habits', 'title', 'عادة'], ['life_tracks', 'name', 'مسار'], ['life_areas', 'name', 'مجال'], ['media', 'title', 'كتاب أو بودكاست'], ['decisions', 'title', 'قرار'], ['lessons', 'text', 'درس'], ['occasions', 'title', 'مناسبة']];
 
+// ---------- النسخة الاحتياطية ----------
+async function doBackup() {
+  try {
+    const out = { app: 'nota-bilal', exported_at: new Date().toISOString(), ...exportAll() };
+    const blob = new Blob([JSON.stringify(out, null, 1)], { type: 'application/json' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `nota-bilal-${today()}.json`;
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    const s = await auth.session(); if (s) await upsert('profiles', { user_id: s.user.id, last_backup_on: today() }, 'user_id');
+    toast('النسخة نزلت. احفظها في "الملفات"'); doRefresh();
+  } catch (e) { fail(e); }
+}
+
+// ---------- اختصار سيري: بيبعت الكلام للـ Worker، والـ Worker بيحطه في صندوق الوارد ----------
+// المفتاح ده سر بينك وبين الـ Worker: أي حد معاه يقدر يكتب في صندوق الوارد بتاعك بس (ميقدرش يقرا حاجة)
+async function shortcutSheet() {
+  const p = await single('profiles'), url = WORKER_URL ? WORKER_URL.replace(/\/$/, '') + '/inbox' : '';
+  if (!url) return alertBox('محتاج الـ Worker الأول', 'الاختصار بيشتغل عن طريق Worker التذكيرات على Cloudflare. اعمله الأول وحط لينكه في config.js.', true);
+  const tok = p?.shortcut_token;
+  openSheet('سجّل بصوتك من سيري', tok ? `
+    <div class="card stack" style="gap:6px;font-size:14px;line-height:1.7">
+      <b>اعمل الاختصار مرة واحدة بس:</b>
+      <div>1. افتح تطبيق <b>Shortcuts (الاختصارات)</b> ← دوس <b>+</b></div>
+      <div>2. <b>Add Action</b> ← دوّر على <b>Dictate Text (إملاء نص)</b> واختارها، وخلّي اللغة عربي</div>
+      <div>3. ضيف <b>Get Contents of URL (الحصول على محتويات URL)</b>، وحط فيها اللينك اللي تحت</div>
+      <div>4. دوس السهم جنبها: <b>Method = POST</b>، وفي <b>Headers</b> ضيف: الاسم <b>Authorization</b> والقيمة المفتاح اللي تحت</div>
+      <div>5. <b>Request Body = JSON</b> ← ضيف حقل اسمه <b>text</b> وقيمته <b>Dictated Text</b> (النص المُملى)</div>
+      <div>6. ضيف <b>Show Notification</b> واكتب فيها "اتحفظ في النوتة"</div>
+      <div>7. سمّي الاختصار <b>سجّل في النوتة</b>. خلاص! قول "يا سيري، سجّل في النوتة" واتكلم</div></div>
+    <label class="field"><span>اللينك</span><input class="inp" readonly value="${esc(url)}" style="direction:ltr;font-size:13px"></label>
+    <button class="btn sm" data-act="copy-val" data-v="${esc(url)}">انسخ اللينك</button>
+    <label class="field"><span>المفتاح (Authorization)</span><input class="inp" readonly value="Bearer ${esc(tok)}" style="direction:ltr;font-size:13px"></label>
+    <button class="btn sm" data-act="copy-val" data-v="Bearer ${esc(tok)}">انسخ المفتاح</button>
+    <div class="btns"><button class="btn" data-act="shortcut-make">اعمل مفتاح جديد</button></div>
+    <p class="mut" style="margin:0;font-size:13px">لو عملت مفتاح جديد، القديم بيبطّل، ولازم تحط الجديد في الاختصار.</p>`
+    : `<p style="margin:0;line-height:1.7">هتعمل اختصار في الآيفون: تقول "يا سيري، سجّل في النوتة" وتتكلم، والكلام يروح على طول صندوق الوارد، من غير ما تفتح التطبيق. وبعدين ترتّبه في المراجعة الأسبوعية.</p>
+    <button class="btn amb" data-act="shortcut-make">ابدأ</button>`);
+}
+const settingsExtra = {
+  async 'shortcut-make'() {
+    const tok = [...crypto.getRandomValues(new Uint8Array(20))].map(b => b.toString(16).padStart(2, '0')).join('');
+    try { const s = await auth.session(); await upsert('profiles', { user_id: s.user.id, shortcut_token: tok }, 'user_id'); await syncNow(); closeSheet(); shortcutSheet(); } catch (e) { fail(e); }
+  },
+  async 'copy-val'(el) { try { await navigator.clipboard.writeText(el.dataset.v); toast('اتنسخ'); } catch (e) { toast('علّم على النص وانسخه'); } },
+};
+
 export default {
   problems: {
     async render(p) {
@@ -100,6 +145,17 @@ export default {
     },
   },
 
+  backup: {
+    async render() {
+      const p = await single('profiles');
+      return { title: 'النسخة الاحتياطية', back: '#/settings', html: `<div class="stack" style="align-items:center;text-align:center;padding-top:6vh;gap:16px">
+        ${ic('archive', 48)}<div class="disp" style="font-size:22px">نسخة الأسبوع</div>
+        <div class="mut" style="line-height:1.7">دوسة واحدة وينزل ملف فيه كل بياناتك. احفظه في "الملفات" أو ابعته لنفسك.${p?.last_backup_on ? `<br>آخر نسخة: ${fd(p.last_backup_on)}` : ''}</div>
+        <button class="btn amb" data-act="backup" style="min-width:220px">نزّل النسخة</button></div>` };
+    },
+    actions: { backup: () => doBackup() },
+  },
+
   archive: {
     async render() {
       const sets = await Promise.all(ARCH_TABLES.map(([t]) => list(t, { archived: true, order: 'archived_at', asc: false, limit: 50 })));
@@ -127,12 +183,14 @@ export default {
             ${row('ملخص الصبح', `<div class="mut" style="font-size:13px">مهامك، والمتأخر، والكورسات، والقرارات اللي محتاجة مراجعة، والمناسبات القريبة</div><div class="row" style="gap:6px;margin-top:4px"><input type="time" class="inp" style="width:auto;min-height:36px" value="${(p?.morning_reminder || '08:30').slice(0, 5)}" data-change="pref-time" data-k="morning_reminder">${pushState === 'on' && WORKER_URL ? '<button class="btn sm" data-act="push-test" data-morning="1">ابعته دلوقتي</button>' : ''}</div>`, sw(p?.morning_enabled, 'data-act="pref" data-k="morning_enabled"'))}
             ${row('تذكير بالليل تراجع يومك', `<input type="time" class="inp" style="width:auto;min-height:36px;margin-top:4px" value="${(p?.evening_reminder || '22:00').slice(0, 5)}" data-change="pref-time" data-k="evening_reminder">`, sw(p?.evening_enabled, 'data-act="pref" data-k="evening_enabled"'))}
             <div class="mut" style="padding-top:8px">تذكير كل هدف أو مهمة بيتظبط من جوّاه.${WORKER_URL ? '' : ' الإشعارات هتوصل بعد ما تعمل الـ Worker على Cloudflare.'}</div></div>
+          <button class="card row" data-act="shortcut-open" style="gap:12px;text-align:start">${ic('mic', 22)}<div style="flex:1;line-height:1.5"><div style="font-weight:600">سجّل بصوتك من سيري</div><div class="mut">${p?.shortcut_token ? 'الاختصار متفعّل · دوس عشان تشوف الخطوات' : 'تقول "سجّل في النوتة" والكلام يروح صندوق الوارد'}</div></div>${ic('chev', 18)}</button>
           <a class="card row" href="#/structure" style="gap:12px">${ic('tree', 22)}<div style="flex:1;line-height:1.5"><div style="font-weight:600">الأقسام والوظايف ومعايير التقييم</div><div class="mut">اتنقلت لـ "الهيكل والنظام" ← الأقسام</div></div>${ic('chev', 18)}</a>
           <div class="card list"><b style="font-weight:600;display:block;padding-bottom:4px">الأمان</b>
             ${row('قفل فلوسي بـ Face ID', 'لو قفلته، فلوسي هتفتح من غير بصمة', sw(p?.money_lock_enabled !== false, 'data-act="pref" data-k="money_lock_enabled"'))}</div>
           <div class="card list"><b style="font-weight:600;display:block;padding-bottom:4px">البيانات</b>
             ${row('نسخة على الموبايل', syncLine(), '<button class="btn sm" data-act="sync-now">زامن دلوقتي</button>')}
-            ${row('نسخة احتياطية', 'ملف فيه كل بياناتك، احتفظ بيه على الموبايل', '<button class="btn sm" data-act="backup">نزّل نسخة</button>')}
+            ${row('نسخة احتياطية', `ملف فيه كل بياناتك، احتفظ بيه على الموبايل${p?.last_backup_on ? ` · آخر نسخة ${fd(p.last_backup_on)}` : ''}`, '<button class="btn sm" data-act="backup">نزّل نسخة</button>')}
+            ${row('تذكير النسخة كل أسبوع', 'كل جمعة بالليل يجيلك إشعار، تدوس عليه وتنزّل النسخة', sw(p?.backup_enabled !== false, 'data-act="pref" data-k="backup_enabled"'))}
             ${row('الأرشيف', 'الحاجات اللي شيلتها', '<a class="btn sm" href="#/archive">افتح</a>')}
             ${row('تسجيل الخروج', '', '<button class="btn sm bad" data-act="signout">خروج</button>')}</div>
         </div>`,
@@ -179,19 +237,14 @@ export default {
           else alertBox(`الإشعار ما وصلش (${r.status})`, why || 'مفيش تفاصيل');
         } catch (e) { toast(e.message || 'حصل خطأ'); } finally { el.disabled = false; }
       },
-      async backup() {
-        try {
-          const out = { app: 'nota-bilal', exported_at: new Date().toISOString(), ...exportAll() };
-          const blob = new Blob([JSON.stringify(out, null, 1)], { type: 'application/json' });
-          const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `nota-bilal-${today()}.json`;
-          document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-        } catch (e) { fail(e); }
-      },
+      backup: () => doBackup(),
+      'shortcut-open': () => shortcutSheet(),
       async 'sync-now'() {
         if (!navigator.onLine) return toast('مفيش نت. تعديلاتك محفوظة على الموبايل، وهتتبعت أول ما النت يرجع');
         toast('بيزامن…'); const ok = await syncNow(); const s = syncStatus();
         toast(ok ? 'اتزامن' : s.pending ? `فاضل ${edits(s.pending)}، هتتبعت لوحدها` : 'ما اتزامنش دلوقتي، هيحاول تاني لوحده'); doRefresh();
       },
+      ...settingsExtra,
       async signout() { await auth.signOut(); location.hash = ''; location.reload(); },
     },
   },

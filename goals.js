@@ -10,6 +10,7 @@ import { courseLate } from './more.js';
 import { habitStats } from './habits.js';
 import { withMentions } from './mentions.js';
 import { goalMinutes, durText } from './insights.js';
+import { dreamPicker } from './dreams.js';
 
 const STAGES = [['raw', 'خام'], ['developing', 'بتتطور'], ['ready', 'جاهزة']];
 // فكرة نايمة: بقالها 30 يوم أو أكتر محدش لمسها (لا اتعدلت ولا اتغيرت مرحلتها). بيرجع عدد الأيام، أو 0 لو صاحية
@@ -105,7 +106,7 @@ export default {
         list('links', { eq: { to_type: 'goal', to_id: g.id, from_type: 'task' } }),
       ]);
       const tasks = tl.length ? await list('tasks', { in: ['id', tl.map(l => l.from_id)], order: 'due_on' }) : [];
-      const d = await lifeData(), sc = smartCheck(g), num = goalNumber(g), served = await servedCard(g), mins = await goalMinutes(g.id);
+      const d = await lifeData(), sc = smartCheck(g), num = goalNumber(g), served = await servedCard(g), mins = await goalMinutes(g.id), dreamCard = await dreamPicker(g);
       const pr = prog[0] || {}; const late = g.status === 'active' && g.due_on && g.due_on < today();
       const metric = metrics.find(m => m.id === g.metric_id);
       return {
@@ -125,6 +126,7 @@ export default {
             <input type="time" class="inp" style="width:auto;min-height:40px" value="${g.reminder_time ? g.reminder_time.slice(0, 5) : '09:00'}" data-change="goal-remind-time" aria-label="الساعة">
             ${sw(g.reminder_enabled, 'data-act="goal-remind"')}</div>`}
           ${g.why ? `<div class="card"><div class="mut" style="font-weight:600">ليه؟</div><div style="white-space:pre-wrap">${esc(g.why)}</div></div>` : ''}
+          ${dreamCard}
           ${stepsBlock('goal', g.id, steps)}
           <div class="card" style="padding:4px 14px"><div class="between" style="padding-top:8px"><span style="font-weight:600">مهام الهدف</span><button class="btn sm" data-act="goal-task">${ic('plus', 16)}مهمة</button></div>
             <div class="list">${tasks.map(t => taskRow(t, { showStar: false })).join('') || '<div class="mut" style="padding:10px 0">مفيش مهام مربوطة. اعمل مهمة للنهاردة من هنا.</div>'}</div></div>
@@ -155,6 +157,7 @@ export default {
       },
       async 'serve-link'(el, p) { try { await link('goal', p.id, el.dataset.t, el.dataset.id); closeSheet(); toast('اتربط'); doRefresh(); } catch (e) { fail(e); } },
       async 'goal-remind'(el, p) { try { await upd('goals', p.id, { reminder_enabled: !el.classList.contains('on'), reminder_time: document.querySelector('[data-change=goal-remind-time]')?.value || '09:00' }); doRefresh(); } catch (e) { fail(e); } },
+      async 'goal-dream'(el, p) { try { await upd('goals', p.id, { dream_id: el.value || null }); toast(el.value ? 'اتربط بالحلم' : 'اتشال الربط'); } catch (e) { fail(e); } },
       async 'goal-remind-time'(el, p) { try { await upd('goals', p.id, { reminder_time: el.value }); toast('ميعاد التذكير اتغير'); } catch (e) { fail(e); } },
       async 'goal-task'(el, p) { const g = await one('goals', p.id); openTask(null, { _link: { type: 'goal', id: g.id, title: g.title } }); },
       async 'goal-pause'(el, p) { const g = await one('goals', p.id); try { await upd('goals', p.id, { status: g.status === 'paused' ? 'active' : 'paused' }); doRefresh(); } catch (e) { fail(e); } },

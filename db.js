@@ -9,8 +9,8 @@ export const sb = configured
   ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false } })
   : null;
 
-const TABLES = ['profiles','company','company_metrics','company_log','ideas','goals','plan_steps','recurring_tasks','tasks','links','problems','role_criteria','team_members','member_ratings','member_notes','weekly_reviews','courses','org_units','sops','job_roles','positions','candidates','projects','project_clients','project_devs','project_dev_notes','wallets','assets','investments','investment_returns','debts','debt_payments','commitments','budget_categories','expenses','incomes','financial_goals','net_worth_snapshots','push_subscriptions','day_logs','day_plans','habits','habit_logs','life_tracks','life_areas','departments','waiting_for','owner_points','inbox','templates','day_journal','media','learnings','decisions','lessons','occasions'];
-const ARCH = new Set(['company_metrics','company_log','ideas','goals','recurring_tasks','tasks','problems','team_members','courses','sops','positions','candidates','projects','project_clients','project_devs','wallets','assets','investments','debts','commitments','budget_categories','expenses','incomes','financial_goals','day_logs','habits','life_tracks','life_areas','departments','waiting_for','owner_points','inbox','templates','media','learnings','decisions','lessons','occasions']);
+const TABLES = ['profiles','company','company_metrics','company_log','ideas','goals','plan_steps','recurring_tasks','tasks','links','problems','role_criteria','team_members','member_ratings','member_notes','weekly_reviews','courses','org_units','sops','job_roles','positions','candidates','projects','project_clients','project_devs','project_dev_notes','wallets','assets','investments','investment_returns','debts','debt_payments','commitments','budget_categories','expenses','incomes','financial_goals','net_worth_snapshots','push_subscriptions','day_logs','day_plans','habits','habit_logs','life_tracks','life_areas','departments','waiting_for','owner_points','inbox','templates','day_journal','media','learnings','decisions','lessons','occasions','life_scores','dreams'];
+const ARCH = new Set(['company_metrics','company_log','ideas','goals','recurring_tasks','tasks','problems','team_members','courses','sops','positions','candidates','projects','project_clients','project_devs','wallets','assets','investments','debts','commitments','budget_categories','expenses','incomes','financial_goals','day_logs','habits','life_tracks','life_areas','departments','waiting_for','owner_points','inbox','templates','media','learnings','decisions','lessons','occasions','dreams']);
 const KEY = { profiles: 'user_id', company: 'user_id' };
 const NO_UPDATED = new Set(['links','member_notes','project_dev_notes','investment_returns','debt_payments','expenses','incomes','net_worth_snapshots','push_subscriptions','role_criteria','budget_categories','habit_logs']);
 const todayStr = () => { const d = new Date(); return new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10); };
@@ -20,7 +20,7 @@ const DEFAULTS = {
   ideas: () => ({ stage: 'raw', source: 'manual' }), goals: () => ({ area: 'المبيعات والمحلات', status: 'active', reminder_enabled: false }),
   plan_steps: () => ({ done: false, sort: 0 }), recurring_tasks: () => ({ active: true }), tasks: () => ({ due_on: todayStr(), done: false, source: 'manual' }),
   problems: () => ({ status: 'open', occurrences: 1 }), team_members: () => ({ role: 'فني', active: true }), member_ratings: () => ({ scores: {} }),
-  member_notes: () => ({ noted_on: todayStr() }), weekly_reviews: () => ({ next_top3: [] }), courses: () => ({ status: 'active', lessons_done: 0 }),
+  member_notes: () => ({ noted_on: todayStr() }), weekly_reviews: () => ({ next_top3: [], top3_goals: [] }), courses: () => ({ status: 'active', lessons_done: 0 }),
   org_units: () => ({ sort: 0 }), sops: () => ({ version: 1 }), positions: () => ({ role: 'أخرى', status: 'open' }), candidates: () => ({ stage: 'applied' }),
   projects: () => ({ kind: 'system', is_personal: false }), project_clients: () => ({ status: 'target' }), project_devs: () => ({ stage: 'idea' }),
   project_dev_notes: () => ({ noted_on: todayStr() }), wallets: () => ({ kind: 'cash', balance: 0 }), investment_returns: () => ({ received_on: todayStr() }),
@@ -31,7 +31,7 @@ const DEFAULTS = {
   life_tracks: () => ({ sort: 0 }), life_areas: () => ({ sort: 0 }), departments: () => ({ sort: 0 }),
   waiting_for: () => ({ done: false }), owner_points: () => ({ status: 'open' }), templates: () => ({ items: [] }),
   media: () => ({ kind: 'book', status: 'active', current_page: 0, current_minutes: 0 }), learnings: () => ({ status: 'new' }),
-  decisions: () => ({ decided_on: todayStr() }), lessons: () => ({ source: 'other' }), occasions: () => ({ yearly: true, remind_days: 2 }),
+  decisions: () => ({ decided_on: todayStr() }), lessons: () => ({ source: 'other' }), occasions: () => ({ yearly: true, remind_days: 2 }), dreams: () => ({ year: Number(todayStr().slice(0, 4)) }),
 };
 
 // ---------------- التخزين على الجهاز (IndexedDB) ----------------
@@ -136,6 +136,7 @@ function view(name) {
       ...T('sops').filter(A).map(r => ({ kind: 'sop', id: r.id, title: r.title, body: r.body, meta: String(r.version) })),
       ...T('company_log').filter(A).map(r => ({ kind: 'log', id: r.id, title: r.text, body: null, meta: r.happened_on })),
       ...T('decisions').filter(A).map(r => ({ kind: 'decision', id: r.id, title: r.title, body: [r.why, r.expected, r.result].filter(Boolean).join(' '), meta: r.decided_on })),
+      ...T('dreams').filter(A).map(r => ({ kind: 'dream', id: r.id, title: r.title, body: r.why, meta: String(r.year) })),
       ...T('lessons').filter(A).map(r => ({ kind: 'lesson', id: r.id, title: r.text, body: null, meta: r.source })),
       ...T('media').filter(A).map(r => ({ kind: 'media', id: r.id, title: r.title, body: r.author, meta: r.kind })),
     ];
@@ -372,7 +373,7 @@ export const auth = {
 // ---------------- الربط بين أي حاجتين ----------------
 export const LINK_TABLE = { task: ['tasks','title'], goal: ['goals','title'], idea: ['ideas','title'], problem: ['problems','title'],
   member: ['team_members','name'], project: ['projects','name'], project_dev: ['project_devs','title'], course: ['courses','title'],
-  sop: ['sops','title'], position: ['positions','title'], candidate: ['candidates','name'], metric: ['company_metrics','label'], habit: ['habits','title'], area: ['life_areas','name'], decision: ['decisions','title'], lesson: ['lessons','text'], media: ['media','title'] };
+  sop: ['sops','title'], position: ['positions','title'], candidate: ['candidates','name'], metric: ['company_metrics','label'], habit: ['habits','title'], area: ['life_areas','name'], decision: ['decisions','title'], lesson: ['lessons','text'], media: ['media','title'], dream: ['dreams','title'] };
 
 export async function linksOf(type, id) {
   const [a, b] = await Promise.all([list('links', { eq: { from_type: type, from_id: id } }), list('links', { eq: { to_type: type, to_id: id } })]);

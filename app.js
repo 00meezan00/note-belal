@@ -21,9 +21,11 @@ import { tplGlobal } from './templates.js';
 import './mentions.js';
 import { learnGlobal } from './learn.js';
 import lessons, { lessonGlobal } from './lessons.js';
+import dreams, { dreamGlobal } from './dreams.js';
+import numbers from './numbers.js';
 
-const SCREENS = { ...today, ...goals, ...team, ...company, ...misc, ...projects, ...money, ...more, ...review, ...insights, ...habits, ...compare, ...life, ...lessons };
-const GLOBAL = { ...goalGlobal, ...teamGlobal, ...projectGlobal, ...moneyGlobal, ...moreGlobal, ...insightGlobal, ...habitGlobal, ...lifeGlobal, ...peopleGlobal, ...inboxGlobal, ...tplGlobal, ...learnGlobal, ...lessonGlobal, ...taskActions, ...stepActions, ...linkActions, ...captureActions,
+const SCREENS = { ...today, ...goals, ...team, ...company, ...misc, ...projects, ...money, ...more, ...review, ...insights, ...habits, ...compare, ...life, ...lessons, ...dreams, ...numbers };
+const GLOBAL = { ...goalGlobal, ...teamGlobal, ...projectGlobal, ...moneyGlobal, ...moreGlobal, ...insightGlobal, ...habitGlobal, ...lifeGlobal, ...peopleGlobal, ...inboxGlobal, ...tplGlobal, ...learnGlobal, ...lessonGlobal, ...dreamGlobal, ...taskActions, ...stepActions, ...linkActions, ...captureActions,
   'close-sheet': closeSheet, capture: openCapture, menu: openMenu, 'close-menu': closeMenu,
   'nav-back'() { const top = navStack[navStack.length - 1]; location.hash = top ? top.hash : '#/today'; } };
 
@@ -118,6 +120,8 @@ async function render({ refresh = false } = {}) {
   else if (!refresh) progress(true);
   try {
     const v = await screen.render(p);
+    // لينك فيه ?tab= بيفتح الزرار ده مرة واحدة بس، وبعدها الأزرار تشتغل عادي (من غير ما اللينك يرجّعها)
+    if (p.query.tab && keyOf() === key) { const [base, qs] = location.hash.split('?'), q = new URLSearchParams(qs); q.delete('tab'); history.replaceState(null, '', base + (q.toString() ? '?' + q : '')); }
     if (seq !== renderSeq) return;
     progress(false);
     if (canCache) viewCache.set(key, v);
@@ -189,7 +193,7 @@ function openMenu() {
     : `<a href="${href}">${ic(icon, 21)}<span>${label}</span>${meta ? `<span class="mut">${meta}</span>` : ''}</a>`;
   d.innerHTML = `<div class="back" data-act="close-menu"></div><nav class="panel" aria-label="القائمة">
     <div style="padding:22px 20px 14px;border-bottom:1px dashed var(--line)"><div class="disp" style="font-size:26px">نوتة بلال</div><div class="mut">Fix Team</div></div>
-    <div class="gh">حياتي</div>${item('#/life', 'star', 'حياتي', 'المسارات والمجالات')}${item('#/habits', 'repeat', 'عاداتي')}${item('#/courses', 'book', 'تعلّمي', 'كورسات وكتب وبودكاست')}${item('#/compare', 'chart', 'مقارنة الشهور')}
+    <div class="gh">حياتي</div>${item('#/life', 'star', 'حياتي', 'المسارات والمجالات')}${item('#/habits', 'repeat', 'عاداتي')}${item('#/courses', 'book', 'تعلّمي', 'كورسات وكتب وبودكاست')}${item('#/dreams', 'goal', 'خطة سنتي', 'الحلم والأهداف')}${item('#/numbers', 'chart', 'أرقامي', 'السنة والشهور')}
     <div class="gh">الشغل</div>${item('#/problems', 'alert', 'سجل المشاكل')}${item('#/lessons', 'check', 'الدروس والقرارات')}${item('#/structure', 'tree', 'الهيكل والنظام')}${item('#/hiring', 'user', 'التوظيف')}
     <div class="gh">متابعة</div>${item('#/day', 'clock', 'يومي', 'وقتي ونسبي')}${item('#/weekly', 'review', 'المراجعات الأسبوعية')}${item('#/recurring', 'repeat', 'مهام جاهزة', 'متكررة وقوالب')}${item('#/calendar', 'cal', 'التقويم')}
     <div class="gh">شغلي الخاص</div>${item('#/projects', 'layers', 'مشاريعي')}${item('#/money', 'wallet', 'فلوسي', 'مقفول')}

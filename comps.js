@@ -7,9 +7,9 @@ import { withMentions } from './mentions.js';
 export const AREAS = ['المبيعات والمحلات','التسويق','خدمة العملاء','خدمة ما بعد البيع والإرجاع','المحاسبة','الموردين وقطع الغيار','التسعير والصفقات','الموارد البشرية','الهيكل والنظام','متابعة الفنيين','التوسع'];
 export const KIND = { task: ['مهمة','cal'], goal: ['هدف','goal'], idea: ['فكرة','spark'], problem: ['مشكلة','alert'], member: ['فرد','user'],
   project: ['مشروع','layers'], project_dev: ['تطوير في مشروع','layers'], course: ['كورس','book'], sop: ['إجراء','doc'], position: ['وظيفة','user'],
-  candidate: ['متقدم','user'], metric: ['مؤشر','co'], habit: ['عادة','repeat'], area: ['مجال','star'], decision: ['قرار','check'], lesson: ['درس','book'], media: ['كتاب أو بودكاست','book'] };
+  candidate: ['متقدم','user'], metric: ['مؤشر','co'], habit: ['عادة','repeat'], area: ['مجال','star'], decision: ['قرار','check'], lesson: ['درس','book'], media: ['كتاب أو بودكاست','book'], dream: ['حلم','star'] };
 export const hrefOf = (type, id) => ({ goal: `#/goal/${id}`, idea: `#/idea/${id}`, member: `#/member/${id}`, problem: `#/problems?open=${id}`,
-  metric: '#/company', project: `#/project/${id}`, project_dev: `#/dev/${id}`, course: '#/courses', sop: '#/structure', position: '#/hiring', candidate: '#/hiring', habit: '#/habits', area: '#/life', decision: '#/lessons', lesson: '#/lessons?tab=lessons', media: '#/courses?tab=media' }[type]);
+  metric: '#/company', project: `#/project/${id}`, project_dev: `#/dev/${id}`, course: '#/courses', sop: '#/structure', position: '#/hiring', candidate: '#/hiring', habit: '#/habits', area: '#/life', decision: '#/lessons', lesson: '#/lessons?tab=lessons', media: '#/courses?tab=media', dream: '#/dreams' }[type]);
 
 let refresh = () => {};
 export const setRefresh = fn => (refresh = fn);

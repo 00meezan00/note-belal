@@ -2,6 +2,7 @@
 import { list, single, ins, upd, upsert } from './db.js';
 import { esc, ic, fd, fMonth, today, addDays, weekStart, monthStart, n, empty, toast, fail, formOf, LOC } from './ui.js';
 import { doRefresh, openTask, archiveWithUndo } from './comps.js';
+import { link } from './db.js';
 import { dormantDays, SLEEP_DAYS } from './goals.js';
 import { courseLate } from './more.js';
 import { habitStats } from './habits.js';
@@ -48,10 +49,12 @@ async function weekVsLast(ws) {
   const [A, B] = await Promise.all([monthNumbers([ws, t]), monthNumbers([pws, addDays(pws, n)])]);
   const R = [['tasks', 'مهام خلصت'], ['goals', 'أهداف اتحققت'], ['solved', 'مشاكل اتحلت'], ['work', 'ساعات شغل', 'س'], ['habits', 'العادات', '%']].filter(([k]) => A[k] || B[k]);
   if (!R.length) return '';
-  return `<div class="card" style="padding:10px 14px"><div class="between"><b style="font-weight:600">الأسبوع ده قصاد اللي فات</b><a href="#/compare" class="mut" style="font-size:13px">مقارنة الشهور</a></div>
+  return `<div class="card" style="padding:10px 14px"><div class="between"><b style="font-weight:600">الأسبوع ده قصاد اللي فات</b><a href="#/numbers?tab=months" class="mut" style="font-size:13px">أرقامي</a></div>
     <div class="list">${R.map(([k, l, u = '']) => { const a = A[k], b = B[k], c = a > b ? 'ok' : a < b ? 'bad' : ''; return `<div class="row" style="gap:8px;padding:7px 0"><span style="flex:1">${l}</span><b class="num">${n0(a)}${u}</b><span class="mut num" style="font-size:13px">قصاد ${n0(b)}${u}</span><span class="tag ${c}" style="min-width:22px;text-align:center">${a > b ? '▲' : a < b ? '▼' : '='}</span></div>`; }).join('')}</div></div>`;
 }
 const n0 = v => n(v);
+// أهم 3 حاجات + الهدف اللي كل واحدة بتخدمه (بنفس الترتيب)
+const top3Of = f => { const P = [0, 1, 2].map(i => [f['t' + i], f['g' + i] || '']).filter(x => x[0]); return { next_top3: P.map(x => x[0]), top3_goals: P.map(x => x[1]) }; };
 import { companyProgress, progressReport } from './insights.js';
 
 const st = { month: today().slice(0, 7), day: today(), rep: 'month', from: '', to: '' };
@@ -113,7 +116,9 @@ export default {
         list('project_devs', { eq: { stage: 'applied' }, gte: ['applied_on', ws] }), list('weekly_reviews', { lt: ['week_start', ws], order: 'week_start', asc: false, limit: 8 })]);
       const r = rev[0] || { went_well: '', blocked: '', next_top3: [] };
       const [hub, ibx, wvl] = await Promise.all([waitingForYou(ws), inboxCard(), weekVsLast(ws)]);
-      const top = [0, 1, 2].map(i => r.next_top3?.[i] || '');
+      const top = [0, 1, 2].map(i => r.next_top3?.[i] || ''), topG = [0, 1, 2].map(i => (r.top3_goals || [])[i] || '');
+      const actG = await list('goals', { eq: { status: 'active' }, order: 'title' });
+      const gSel = i => actG.length ? `<select class="inp" name="g${i}" style="min-height:38px;font-size:13px" aria-label="بيخدم أنهي هدف"><option value="">بيخدم أنهي هدف؟ (اختياري)</option>${actG.map(g => `<option value="${g.id}"${g.id === topG[i] ? ' selected' : ''}>${esc(g.title)}</option>`).join('')}</select>` : '';
       const stat = (v, l) => `<div><div class="num" style="font-size:22px">${v}</div><div style="font-size:12px;color:#C9D2D9">${l}</div></div>`;
       return {
         title: 'مراجعة الأسبوع', sub: `${fd(ws)} – ${fd(we)}`, back: '#/today',
@@ -131,7 +136,7 @@ export default {
           <form class="stack" data-act-submit="review-save" data-ws="${ws}">
             <label class="card field"><span>إيه اللي مشي كويس؟</span><textarea name="went_well" rows="3">${esc(r.went_well)}</textarea></label>
             <label class="card field"><span>إيه اللي اتعطل، وليه؟</span><textarea name="blocked" rows="3">${esc(r.blocked)}</textarea></label>
-            <div class="card field"><span>أهم 3 حاجات الأسبوع الجاي</span>${top.map((v, i) => `<input class="inp" name="t${i}" value="${esc(v)}" placeholder="${i + 1}">`).join('')}
+            <div class="card field"><span>أهم 3 حاجات الأسبوع الجاي</span>${top.map((v, i) => `<div class="stack" style="gap:4px"><input class="inp" name="t${i}" value="${esc(v)}" placeholder="${i + 1}">${gSel(i)}</div>`).join('')}
               <button type="button" class="btn sm" data-act="review-tasks" data-day="${addDays(ws, 7)}">حوّلهم لمهام أول يوم في الأسبوع الجاي</button></div>
             <button class="btn pri">حفظ المراجعة</button>
           </form>
@@ -150,12 +155,13 @@ export default {
       async 'sleep-archive'(el) { await archiveWithUndo(el.dataset.t === 'idea' ? 'ideas' : 'project_devs', el.dataset.id, 'اتشالت للأرشيف'); },
       async 'review-save'(form) {
         const f = formOf(form);
-        try { await upsert('weekly_reviews', { week_start: form.dataset.ws, went_well: f.went_well || null, blocked: f.blocked || null, next_top3: [f.t0, f.t1, f.t2].filter(Boolean) }, 'user_id,week_start'); toast('المراجعة اتحفظت'); doRefresh(); } catch (e) { fail(e); }
+        try { await upsert('weekly_reviews', { week_start: form.dataset.ws, went_well: f.went_well || null, blocked: f.blocked || null, ...top3Of(f) }, 'user_id,week_start'); toast('المراجعة اتحفظت'); doRefresh(); } catch (e) { fail(e); }
       },
       async 'review-tasks'(el) {
         const f = formOf(el.closest('form')); const items = [f.t0, f.t1, f.t2].filter(Boolean);
         if (!items.length) return toast('اكتب الحاجات الأول');
-        try { for (const t of items) await ins('tasks', { title: t, due_on: el.dataset.day, top3_on: el.dataset.day, source: 'review' }); toast(`اتعملوا ${items.length} مهام يوم ${fd(el.dataset.day)}، ومتعلّمين كأهم حاجات`); } catch (e) { fail(e); }
+        const T3 = top3Of(f);
+        try { for (let i = 0; i < T3.next_top3.length; i++) { const t = await ins('tasks', { title: T3.next_top3[i], due_on: el.dataset.day, top3_on: el.dataset.day, source: 'review' }); if (T3.top3_goals[i]) await link('task', t.id, 'goal', T3.top3_goals[i]); } toast(`اتعملوا ${items.length} مهام يوم ${fd(el.dataset.day)}، ومتعلّمين كأهم حاجات`); } catch (e) { fail(e); }
       },
     },
   },

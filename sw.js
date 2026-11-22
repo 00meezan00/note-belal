@@ -1,6 +1,6 @@
 // نوتة بلال: بيخلي التطبيق يفتح لو النت ضعيف، وبيجيب آخر نسخة لما النت يبقى موجود
-const CACHE = 'nota-v17';
-const SHELL = ['./', 'index.html', 'app.css', 'manifest.webmanifest', 'app.js', 'company.js', 'compare.js', 'comps.js', 'config.js', 'db.js', 'export.js', 'goals.js', 'goalwiz.js', 'habits.js', 'inbox.js', 'insights.js', 'learn.js', 'lessons.js', 'life.js', 'mentions.js', 'misc.js', 'money.js', 'more.js', 'people.js', 'projects.js', 'remind.js', 'review.js', 'team.js', 'templates.js', 'today.js', 'ui.js'];
+const CACHE = 'nota-v18';
+const SHELL = ['./', 'index.html', 'app.css', 'manifest.webmanifest', 'app.js', 'company.js', 'compare.js', 'dreams.js', 'numbers.js', 'comps.js', 'config.js', 'db.js', 'export.js', 'goals.js', 'goalwiz.js', 'habits.js', 'inbox.js', 'insights.js', 'learn.js', 'lessons.js', 'life.js', 'mentions.js', 'misc.js', 'money.js', 'more.js', 'people.js', 'projects.js', 'remind.js', 'review.js', 'team.js', 'templates.js', 'today.js', 'ui.js'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
 const CDN = ['cdn.jsdelivr.net', 'fonts.googleapis.com', 'fonts.gstatic.com'];

@@ -2,6 +2,7 @@
 // أي حاجة في النوتة (هدف، فكرة، مشكلة، كورس، عادة، مشروع) بتتحط في مسار، ولو حبيت في مجال جوّاه
 import { list, ins, upd, archive } from './db.js';
 import { esc, ic, empty, openSheet, closeSheet, sheetEl, formOf, toast, fail, opts, today, fd, daysBetween } from './ui.js';
+import { upsert } from './db.js';
 import { doRefresh } from './comps.js';
 
 export const DEFAULT_TRACKS = ['شغلي في Fix Team', 'شغلي الخاص', 'فلوسي', 'تطويري', 'صحتي', 'عيلتي', 'ديني'];
@@ -103,6 +104,47 @@ async function occAll() {
   openSheet('كل المناسبات', `<div class="list">${L.map(({ o, next }) => `<button class="row" data-act="occ-open" data-id="${o.id}" style="gap:8px;text-align:start;padding:8px 0;background:none;border:0;width:100%"><span style="flex:1">${esc(o.title)}${o.person ? ` <span class="mut">· ${esc(o.person)}</span>` : ''}</span><span class="mut" style="font-size:13px">${next ? fd(next) : 'عدّت'}</span></button>`).join('')}</div>`);
 }
 
+// ---------- ميزان الحياة: كل شهر تدّي كل مسار درجة من 1 لـ 10 ----------
+const monthOf = (d = today()) => d.slice(0, 7) + '-01';
+const prevMonthOf = m => { const d = new Date(m + 'T12:00'); d.setMonth(d.getMonth() - 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`; };
+const MONTHS = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
+const monthName = m => MONTHS[Number(m.slice(5, 7)) - 1];
+function radar(tracks, cur, old) {
+  const n = tracks.length, cx = 130, cy = 112, R = 72;
+  const pt = (i, v) => { const a = -Math.PI / 2 + i * 2 * Math.PI / n, r = R * v / 10; return [cx + r * Math.cos(a), cy + r * Math.sin(a)]; };
+  const poly = (S, attrs) => `<polygon points="${tracks.map((t, i) => pt(i, S[t.id] || 0).map(x => x.toFixed(1)).join(',')).join(' ')}" ${attrs}/>`;
+  const rings = [2.5, 5, 7.5, 10].map(v => `<polygon points="${tracks.map((t, i) => pt(i, v).map(x => x.toFixed(1)).join(',')).join(' ')}" fill="none" stroke="var(--line)" stroke-width="1"/>`).join('');
+  const axes = tracks.map((t, i) => { const [x, y] = pt(i, 10); return `<line x1="${cx}" y1="${cy}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" stroke="var(--line)"/>`; }).join('');
+  const labels = tracks.map((t, i) => { const [x, y] = pt(i, 12.6); const anc = Math.abs(x - cx) < 8 ? 'middle' : x > cx ? 'start' : 'end';
+    return `<text x="${x.toFixed(1)}" y="${(y + 4).toFixed(1)}" text-anchor="${anc}" font-size="10" fill="var(--ink)">${esc(t.name.replace('شغلي في ', ''))}${cur[t.id] ? ` ${cur[t.id]}` : ''}</text>`; }).join('');
+  return `<svg viewBox="0 0 260 224" width="100%" style="max-width:340px;align-self:center;direction:ltr" role="img" aria-label="ميزان الحياة">${rings}${axes}${old ? poly(old, 'fill="none" stroke="var(--mut)" stroke-width="1.5" stroke-dasharray="4 3"') : ''}${poly(cur, 'fill="var(--amb)" fill-opacity=".35" stroke="var(--amb)" stroke-width="2"')}${labels}</svg>`;
+}
+async function wheelCard(d) {
+  const m = monthOf(), pm = prevMonthOf(m);
+  const S = await list('life_scores', { in: ['month', [m, pm]] });
+  const of = mm => Object.fromEntries(S.filter(x => x.month === mm).map(x => [x.track_id, x.score]));
+  let cur = of(m), old = of(pm), curM = m;
+  if (!Object.keys(cur).length && Object.keys(old).length) { cur = old; old = null; curM = pm; }
+  if (!Object.keys(cur).length) return `<div class="card stack" style="gap:8px"><b style="font-weight:600">ميزان حياتك</b><div class="mut" style="font-size:14px;line-height:1.6">كل شهر تدّي كل مسار درجة من 1 لـ 10، وتشوف بعينك أنهي ناحية في حياتك محتاجة اهتمام. وآخر كل شهر هفكّرك.</div><button class="btn amb" data-act="wheel-open">قيّم الشهر ده</button></div>`;
+  const low = d.tracks.filter(t => cur[t.id]).sort((a, b) => cur[a.id] - cur[b.id])[0];
+  const avg = (Object.values(cur).reduce((a, b) => a + b, 0) / Object.values(cur).length).toFixed(1);
+  return `<div class="card stack" style="gap:8px"><div class="between"><b style="font-weight:600">ميزان حياتك · ${monthName(curM)}</b><button class="btn sm" data-act="wheel-open">${curM === m ? 'عدّل' : 'قيّم الشهر ده'}</button></div>
+    ${radar(d.tracks, cur, old && Object.keys(old).length ? old : null)}
+    <div class="row mut" style="gap:6px 14px;flex-wrap:wrap;font-size:13px"><span>المتوسط <b class="num" style="color:var(--ink)">${avg}</b> من 10</span>${low ? `<span>أقل مسار: <b style="color:var(--ink)">${esc(low.name)}</b></span>` : ''}${old && Object.keys(old).length ? '<span>المتقطع = الشهر اللي فات</span>' : ''}</div></div>`;
+}
+async function wheelSheet() {
+  const d = await lifeData(), m = monthOf();
+  const S = Object.fromEntries((await list('life_scores', { eq: { month: m } })).map(x => [x.track_id, x]));
+  openSheet(`ميزان ${monthName(m)}`, `<p class="mut" style="margin:0;font-size:14px">كل مسار ماشي إزاي الشهر ده؟ 1 = وحش خالص، 10 = ممتاز</p>
+    ${d.tracks.map(t => `<div class="stack" style="gap:4px"><div class="between"><span style="font-weight:500">${esc(t.name)}</span><b class="num" data-out="${t.id}">${S[t.id]?.score || 5}</b></div>
+      <input type="range" min="1" max="10" step="1" value="${S[t.id]?.score || 5}" data-track="${t.id}" data-input="wheel-num" style="width:100%;accent-color:var(--amb)"></div>`).join('')}
+    <button class="btn pri" data-act="wheel-save">حفظ</button>`);
+}
+
+// ---------- صفحة المسار: كل حاجة في المسار في مكان واحد ----------
+const rowL = (href, icon, text, sub = '', right = '') => `<a class="lnk" href="${href}"><span class="k">${ic(icon, 16)}</span><span class="t">${esc(text)}${sub ? `<small>${sub}</small>` : ''}</span>${right}</a>`;
+const block = (title, rows, more = '') => rows.length ? `<div class="card" style="padding:10px 14px"><div class="between"><b style="font-weight:600">${title}</b><span class="num mut">${rows.length}</span></div><div class="list">${rows.join('')}</div>${more}</div>` : '';
+
 export default {
   life: {
     async render() {
@@ -112,21 +154,23 @@ export default {
       const live = { goals: r => r.status === 'active', problems: r => r.status !== 'solved', courses: r => r.status === 'active', habits: r => r.active !== false, ideas: r => r.stage !== 'converted', projects: () => true };
       const countLine = tid => ITEMS.map(([t, , l]) => { const k = I[t].filter(r => r.track_id === tid && live[t](r)).length; return k ? `${k} ${l}` : ''; }).filter(Boolean).join(' · ');
       const none = ITEMS.reduce((s, [t]) => s + I[t].filter(r => !r.track_id && live[t](r)).length, 0);
-      const famId = trackByName(d, 'عيلتي')?.id, occ = await occBlock();
+      const famId = trackByName(d, 'عيلتي')?.id, occ = await occBlock(), wheel = await wheelCard(d);
       return {
         title: 'حياتي', sub: `${d.tracks.length} مسارات`, back: '#/today',
         fab: { label: 'مسار', act: 'track-new' },
         html: `<div class="stack">
+          <a class="card row" href="#/dreams" style="gap:12px">${ic('star', 22)}<div style="flex:1;line-height:1.5"><div style="font-weight:600">خطة سنتي</div><div class="mut" style="font-size:13px">الحلم الكبير ← حلم كل مسار ← أهداف كل 3 شهور</div></div>${ic('chev', 18)}</a>
+          ${wheel}
           ${d.tracks.map(t => { const A = d.areas.filter(a => a.track_id === t.id), cl = countLine(t.id);
             return `<div class="card stack" style="gap:10px">
-              <div class="row" style="gap:8px"><b class="disp" style="font-size:19px;flex:1;cursor:pointer" data-act="track-open" data-id="${t.id}" role="button" tabindex="0">${esc(t.name)}</b><button class="star" data-act="track-open" data-id="${t.id}" aria-label="عدّل">${ic('edit', 16)}</button></div>
+              <div class="row" style="gap:8px"><a class="disp" style="font-size:19px;flex:1" href="#/track/${t.id}">${esc(t.name)} <span class="mut" style="font-size:14px">‹</span></a><button class="star" data-act="track-open" data-id="${t.id}" aria-label="عدّل">${ic('edit', 16)}</button></div>
               <div class="mut" style="font-size:13px">${cl || 'لسه مفيش حاجة في المسار ده'}</div>
-              <div class="row" style="flex-wrap:wrap;gap:6px">${A.map(a => `<button class="chip" style="padding:6px 10px" data-act="area-open" data-id="${a.id}">${esc(a.name)}</button>`).join('')}<button class="chip out" style="padding:6px 10px" data-act="area-new" data-track="${t.id}">+ مجال</button></div>
+              <div class="row" style="flex-wrap:wrap;gap:6px">${A.map(a => `<a class="chip" style="padding:6px 10px;text-decoration:none;color:inherit" href="#/track/${t.id}?area=${a.id}">${esc(a.name)}</a>`).join('')}<button class="chip out" style="padding:6px 10px" data-act="area-new" data-track="${t.id}">+ مجال</button></div>
               ${t.id === famId ? occ : ''}
             </div>`; }).join('')}
           ${famId ? '' : `<div class="card stack" style="gap:6px"><b class="disp" style="font-size:19px">المناسبات</b>${occ}</div>`}
           ${none ? `<div class="mut" style="font-size:13px;text-align:center">فيه ${none} حاجة من غير مسار. افتحها واختارلها مسار.</div>` : ''}
-          <p class="mut" style="margin:0;text-align:center;font-size:13px">دوس على اسم المسار أو المجال عشان تغيّر اسمه أو تشيله.</p>
+          <p class="mut" style="margin:0;text-align:center;font-size:13px">دوس على اسم المسار أو المجال عشان تشوف كل حاجاته، وعلى القلم عشان تغيّر اسمه.</p>
         </div>`,
       };
     },
@@ -137,10 +181,64 @@ export default {
       async 'area-new'(el) { areaSheet(await lifeData(), {}, el.dataset.track); },
       async 'area-open'(el) { const d = await lifeData(); areaSheet(d, d.A[el.dataset.id]); },
     },
+    async after(main, p) { if (p.query.wheel) { history.replaceState(null, '', '#/life'); wheelSheet(); } },
+  },
+
+  track: {
+    async render(p) {
+      const d = await lifeData(), t = d.T[p.id];
+      if (!t) return { title: 'المسار', back: '#/life', html: empty('المسار ده مش موجود.') };
+      const A = d.areas.filter(a => a.track_id === t.id), area = p.query.area && d.A[p.query.area] ? p.query.area : '';
+      const ok = r => r.track_id === t.id && (!area || r.area_id === area);
+      const y = Number(today().slice(0, 4));
+      const [goals, prog, ideas, problems, courses, media, habits, projects, decisions, lessons, dreams, scores] = await Promise.all([
+        list('goals', { order: 'due_on' }), list('v_goal_progress'), list('ideas', { order: 'created_at', asc: false }), list('problems', { order: 'created_at', asc: false }),
+        list('courses'), list('media'), list('habits'), list('projects'), list('decisions', { order: 'decided_on', asc: false }), list('lessons', { order: 'created_at', asc: false }),
+        list('dreams', { eq: { year: y } }), list('life_scores', { eq: { track_id: t.id }, order: 'month' })]);
+      const P = Object.fromEntries(prog.map(x => [x.id, x.progress || 0]));
+      const dream = dreams.find(x => x.track_id === t.id);
+      const G = goals.filter(g => ok(g) && g.status !== 'done'), Gd = goals.filter(g => ok(g) && g.status === 'done');
+      const sc = scores.slice(-6);
+      const occ = t.name === 'عيلتي' && !area ? `<div class="card stack" style="gap:6px">${await occBlock()}</div>` : '';
+      const html = [
+        dream && !area ? `<a class="card row" href="#/dreams" style="gap:10px;background:var(--dock);border-color:var(--dock);color:#fff">${ic('star', 20)}<div style="flex:1;line-height:1.5"><div style="font-size:12px;color:#C9D2D9">حلمك في المسار ده لسنة ${y}</div>${esc(dream.title)}</div></a>` : '',
+        sc.length && !area ? `<div class="card stack" style="gap:6px"><div class="between"><b style="font-weight:600">درجته في ميزان حياتك</b><b class="num">${sc[sc.length - 1].score}/10</b></div><div class="row" style="gap:6px;height:70px;align-items:flex-end">${sc.map(x => `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;height:100%;justify-content:flex-end"><span style="width:100%;max-width:26px;height:${x.score * 5}px;border-radius:5px 5px 2px 2px;background:var(--amb)"></span><span style="font-size:10px;color:var(--mut)">${monthName(x.month).slice(0, 4)}</span></div>`).join('')}</div></div>` : '',
+        block('أهداف شغالة', G.map(g => rowL('#/goal/' + g.id, 'goal', g.title, g.status === 'paused' ? 'متوقف' : g.due_on ? 'الموعد ' + fd(g.due_on) : '', `<span class="num mut" style="font-size:13px">${P[g.id]}%</span>`))),
+        block('مشاكل مفتوحة', problems.filter(x => ok(x) && x.status !== 'solved').map(x => rowL('#/problems?open=' + x.id, 'alert', x.title, x.occurrences > 1 ? `اتكررت ${x.occurrences} مرات` : ''))),
+        block('أفكار', ideas.filter(x => ok(x) && x.stage !== 'converted').map(x => rowL('#/idea/' + x.id, 'spark', x.title))),
+        block('عادات', habits.filter(x => ok(x) && x.active !== false).map(x => rowL('#/habits', 'repeat', x.title))),
+        block('بتتعلم', [...courses.filter(x => ok(x) && x.status === 'active').map(x => rowL('#/courses?tab=courses', 'book', x.title, 'كورس')), ...media.filter(x => ok(x) && x.status === 'active').map(x => rowL('#/courses?tab=media', 'book', x.title, x.kind === 'book' ? 'كتاب' : x.kind === 'podcast' ? 'بودكاست' : 'كتاب مسموع'))]),
+        block('مشاريع', projects.filter(ok).map(x => rowL('#/project/' + x.id, 'layers', x.name))),
+        block('قرارات', decisions.filter(ok).slice(0, 8).map(x => rowL('#/lessons?tab=decisions', 'check', x.title, x.outcome ? 'اتراجع' : 'المراجعة ' + fd(x.review_on)))),
+        block('دروس', lessons.filter(ok).slice(0, 8).map(x => rowL('#/lessons?tab=lessons', 'book', x.text))),
+        block('اتحققت', Gd.slice(-5).reverse().map(g => rowL('#/goal/' + g.id, 'check', g.title, 'اتحقق ' + fd(g.done_on)))),
+        occ,
+      ].filter(Boolean).join('');
+      return {
+        title: t.name, sub: area ? 'مجال: ' + d.A[area].name : `${A.length} مجالات`, back: '#/life',
+        html: `<div class="stack" style="padding-bottom:20px">
+          ${A.length ? `<div class="pills" style="flex-wrap:wrap"><button class="${area ? '' : 'on'}" data-act="trk-area" data-v="#/track/${t.id}">الكل</button>${A.map(a => `<button class="${area === a.id ? 'on' : ''}" data-act="trk-area" data-v="#/track/${t.id}?area=${a.id}">${esc(a.name)}</button>`).join('')}</div>` : ''}
+          ${html || empty(area ? 'مفيش حاجة في المجال ده لسه.' : 'لسه مفيش حاجة في المسار ده. أي هدف أو فكرة أو مشكلة تختارلها المسار ده هتظهر هنا.')}
+          <div class="btns"><button class="btn sm" data-act="${area ? 'area-open' : 'track-open'}" data-id="${area || t.id}">${ic('edit', 16)}${area ? 'عدّل المجال' : 'عدّل اسم المسار'}</button><button class="btn sm" data-act="area-new" data-track="${t.id}">+ مجال</button></div>
+        </div>`,
+      };
+    },
+    actions: {
+      'trk-area'(el) { history.replaceState(null, '', el.dataset.v); doRefresh(); },
+      async 'track-open'(el) { const d = await lifeData(); trackSheet(d.T[el.dataset.id]); },
+      async 'area-new'(el) { areaSheet(await lifeData(), {}, el.dataset.track); },
+      async 'area-open'(el) { const d = await lifeData(); areaSheet(d, d.A[el.dataset.id]); },
+    },
   },
 };
 
 export const lifeGlobal = {
+  'wheel-open': () => wheelSheet(),
+  'wheel-num'(el) { const o = sheetEl().querySelector(`[data-out="${el.dataset.track}"]`); if (o) o.textContent = el.value; },
+  async 'wheel-save'() {
+    const m = monthOf();
+    try { for (const r of sheetEl().querySelectorAll('[data-track]')) await upsert('life_scores', { month: m, track_id: r.dataset.track, score: Number(r.value) }, 'user_id,month,track_id'); closeSheet(); toast('ميزان الشهر اتحفظ'); doRefresh(); } catch (e) { fail(e); }
+  },
   'occ-new': () => occSheet(),
   async 'occ-open'(el) { const o = (await list('occasions')).find(x => x.id === el.dataset.id); o && occSheet(o); },
   'occ-all': () => occAll(),

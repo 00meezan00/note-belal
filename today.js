@@ -35,7 +35,7 @@ export default {
         list('goals', { eq: { status: 'active' }, order: 'due_on' }),
         list('v_goal_progress'),
         single('company'),
-        list('weekly_reviews', { eq: { week_start: weekStart() } }),
+        list('weekly_reviews', { in: ['week_start', [weekStart(), addDays(weekStart(), -7)]] }),
         list('v_calendar', { in: ['kind', ['commitment', 'installment']], lte: ['on_date', addDays(t, 1)], order: 'on_date' }).catch(() => []),
       ]);
       const day = tasks.filter(x => x.due_on === t || !x.done).sort((a, b) => (a.done - b.done) || (a.due_on < b.due_on ? -1 : 1));
@@ -47,7 +47,9 @@ export default {
       const avg = goals.length ? Math.round(goals.reduce((s, g) => s + (P[g.id]?.progress || 0), 0) / goals.length) : 0;
       const doneMonth = (await list('goals', { eq: { status: 'done' }, gte: ['done_on', t.slice(0, 7) + '-01'] })).length;
       const near = goals.filter(g => g.due_on && g.due_on <= addDays(t, 14)).slice(0, 3);
-      const isThu = new Date().getDay() === 4;
+      const isThu = new Date().getDay() === 4, thisRev = review.filter(r => r.week_start === weekStart()), lastRev = review.find(r => r.week_start === addDays(weekStart(), -7));
+      const G = Object.fromEntries(goals.map(g => [g.id, g.title]));
+      const weekTop = (lastRev?.next_top3 || []).map((x, i) => ({ text: x, goal: G[(lastRev.top3_goals || [])[i]] }));
       const segs = Math.min(Math.max(day.length, 1), 12);
       const [habitsCard, waitCard, ibxLine] = await Promise.all([habitsTodayCard().catch(() => ''), todayWaitingCard().catch(() => ''), inboxLine().catch(() => '')]);
 
@@ -59,7 +61,8 @@ export default {
             ${bat(day.length ? done / day.length * 100 : 0, done && done === day.length ? 'done' : 'run', { seg: segs, big: true, pct: false })}
             <div class="row mut" style="gap:16px;flex-wrap:wrap"><span>اتحقق الشهر ده: <b class="num" style="color:var(--ink)">${doneMonth}</b> هدف</span><span>متوسط الأهداف: <b class="num" style="color:var(--ink)">${avg}%</b></span></div>
           </div>
-          ${isThu && !review.length ? `<div class="card row" style="background:var(--amb);border-color:var(--amb);color:#15202B;gap:12px">${ic('review', 24)}<div style="flex:1;line-height:1.4"><div style="font-weight:600">مراجعة الأسبوع</div><div style="font-size:13px">3 أسئلة في دقيقتين</div></div><a class="btn pri sm" href="#/weekly">ابدأ</a></div>` : ''}
+          ${weekTop.length ? `<div class="card" style="padding:10px 14px"><div class="between"><b style="font-weight:600">أهم حاجات الأسبوع ده</b><a href="#/dreams" class="mut" style="font-size:13px">خطة سنتي</a></div><div class="list">${weekTop.map(x => `<div style="padding:7px 0;line-height:1.5">• ${esc(x.text)}${x.goal ? `<br><small class="mut">لهدف: ${esc(x.goal)}</small>` : ''}</div>`).join('')}</div></div>` : ''}
+          ${isThu && !thisRev.length ? `<div class="card row" style="background:var(--amb);border-color:var(--amb);color:#15202B;gap:12px">${ic('review', 24)}<div style="flex:1;line-height:1.4"><div style="font-weight:600">مراجعة الأسبوع</div><div style="font-size:13px">3 أسئلة في دقيقتين</div></div><a class="btn pri sm" href="#/weekly">ابدأ</a></div>` : ''}
           ${top.length ? `<div class="sec">أهم ${top.length === 3 ? '3 حاجات' : 'حاجات'} النهاردة</div><div class="card list" style="padding:4px 14px;border-color:var(--amb);border-width:1.5px">${top.map(x => taskRow(x, { linkLabel: labels[x.id] })).join('')}</div>` : ''}
           <div class="between"><span class="sec">${top.length ? 'باقي المهام' : 'مهام النهاردة'}</span><button class="btn sm" data-act="new-task">${ic('plus', 16)}مهمة</button></div>
           ${rest.length ? `<div class="card list" style="padding:4px 14px">${rest.map(x => taskRow(x, { linkLabel: labels[x.id] })).join('')}</div>` : (top.length ? '' : empty('مفيش مهام النهاردة. دوس المايك تحت وسجّل أول مهمة.<br><span class="mut">علّم على النجمة جنب أهم 3 حاجات عشان يطلعوا فوق.</span>'))}
