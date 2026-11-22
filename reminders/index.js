@@ -26,6 +26,14 @@ export default {
         if (!u.ok) return json({ error: 'unauthorized: ' + await u.text() }, 401);
         const user = await u.json();
         const log = [];
+        // "شوف ملخص الصبح": بيبعت الملخص دلوقتي بدل ما تستنى للصبح
+        if (url.searchParams.get('morning')) {
+          const [p] = await db(env, `profiles?select=user_id,display_name,timezone&user_id=eq.${user.id}`);
+          const m = await morningSummary(env, p || { user_id: user.id });
+          const sent = await sendToUser(env, user.id, m, log);
+          if (!sent) return json({ error: log.join('\n') || 'ما اتبعتش' }, 404);
+          return json({ sent, morning: m.body });
+        }
         const n = await sendToUser(env, user.id, { title: 'نوتة بلال', body: 'الإشعارات شغالة. هتوصلك التذكيرات في مواعيدها.', url: './#/settings' }, log);
         if (!n) return json({ error: log.join('\n') || 'ما اتبعتش' }, 404);
         return json({ sent: n, check: await checkUser(env, user.id) });
@@ -68,9 +76,7 @@ async function remindUser(env, p) {
 
     await safe('morning-evening', async () => {
     if (p.morning_enabled && due(p.morning_reminder) && await claim(env, uid, `morning:${date}`)) {
-      const top = open.filter(t => t.top3_on === date).map(t => t.title);
-      const body = open.length ? `عندك ${tasksWord(open.length)} النهاردة${top.length ? '. أهمهم: ' + top.join('، ') : ''}` : 'مفيش مهام لسه. سجّل أهم حاجة النهاردة.';
-      await sendToUser(env, uid, { title: `صباح الخير يا ${name}`, body, url: './#/today' });
+      await sendToUser(env, uid, await morningSummary(env, p, open));
     }
     if (p.evening_enabled && due(p.evening_reminder) && await claim(env, uid, `evening:${date}`)) {
       const all = await db(env, `tasks?select=done&user_id=eq.${uid}&archived_at=is.null&due_on=eq.${date}`);
@@ -127,6 +133,62 @@ async function remindUser(env, p) {
     }
   }
 }
+
+// ---------------- ملخص الصبح ----------------
+// إشعار واحد فيه كل اللي محتاج تعرفه عن يومك: المهام، المتأخر، كورسات النهاردة، الكورسات اللي فاتتك، وتذكيرات الأفكار.
+// كل جزء لوحده: لو جدول فيه مشكلة، الباقي بيظهر عادي
+async function morningSummary(env, p, open) {
+  const { date, dow } = localNow(p.timezone || 'Africa/Cairo');
+  const uid = p.user_id, name = p.display_name || 'بلال', L = [];
+  open = open || await db(env, `tasks?select=id,title,top3_on,due_on&user_id=eq.${uid}&done=eq.false&archived_at=is.null&due_on=lte.${date}`).catch(() => []);
+  const todayT = open.filter(t => t.due_on === date), lateT = open.filter(t => t.due_on < date);
+  const top = open.filter(t => t.top3_on === date).map(t => t.title);
+  L.push(todayT.length ? `• عندك ${tasksWord(todayT.length)} النهاردة${top.length ? '. أهمهم: ' + top.join('، ') : ''}` : '• مفيش مهام النهاردة لسه. سجّل أهم حاجة.');
+  if (lateT.length) L.push(`• ${tasksWord(lateT.length)} متأخر${lateT.length === 1 ? 'ة' : 'ين'} من أيام فاتت`);
+
+  const courses = await db(env, `courses?select=id,title,schedule,sessions,track_from,schedule_until&user_id=eq.${uid}&status=eq.active&archived_at=is.null`)
+    .catch(() => db(env, `courses?select=id,title,schedule,schedule_until&user_id=eq.${uid}&status=eq.active&archived_at=is.null`)).catch(() => []);
+  const todayC = [], lateC = [];
+  for (const c of courses) {
+    const S = Array.isArray(c.schedule) ? c.schedule : [];
+    if (!(c.schedule_until && c.schedule_until < date)) for (const s of S) if (s && s.time && Number(s.day) === dow) todayC.push({ t: s.time, title: c.title });
+    const m = courseMissed(c, date);
+    if (m.n) lateC.push({ ...m, title: c.title });
+  }
+  todayC.sort((a, b) => a.t.localeCompare(b.t));
+  if (todayC.length) L.push(`• كورسات النهاردة: ${todayC.map(x => `${x.title} ${fmtTime(x.t)}`).join('، ')}`);
+  lateC.sort((a, b) => b.days - a.days);
+  for (const c of lateC.slice(0, 3)) L.push(`• متأخر ${daysWord(c.days)} على ${c.title} (فاتك ${sessWord(c.n)})`);
+
+  // العادات اللي عليك النهاردة
+  const habits = await db(env, `habits?select=title,days,active&user_id=eq.${uid}&archived_at=is.null`).catch(() => []);
+  const todayH = habits.filter(h => h.active !== false && (!Array.isArray(h.days) || !h.days.length || h.days.map(Number).includes(dow)));
+  if (todayH.length) L.push(`• عادات النهاردة: ${todayH.map(h => h.title).join('، ')}`);
+
+  let ideas = [];
+  for (const t of ['ideas', 'project_devs']) ideas = ideas.concat(await db(env, `${t}?select=title,remind_time&user_id=eq.${uid}&archived_at=is.null&remind_on=eq.${date}`).catch(() => []));
+  if (ideas.length === 1) L.push(`• فكرة هتفكّرك بيها النهاردة: ${ideas[0].title}`);
+  else if (ideas.length) L.push(`• ${ideas.length} أفكار هتفكّرك بيها النهاردة`);
+
+  return { title: `صباح الخير يا ${name}`, body: L.join('\n'), url: lateC.length ? './#/courses' : './#/today' };
+}
+
+// المواعيد اللي فاتتك في كورس (يومها خلص ومأكدتش إنك أخدتها). نفس حسبة صفحة الكورسات
+function courseMissed(c, date) {
+  const L = Array.isArray(c.schedule) ? c.schedule : [], S = c.sessions || {};
+  if (!L.length || !c.track_from) return { n: 0, days: 0 };
+  const yest = prevDate(date), end = c.schedule_until && c.schedule_until < yest ? c.schedule_until : yest;
+  let d = c.track_from, n = 0, first = null;
+  const min = new Date(Date.parse(date + 'T12:00:00Z') - 180 * 864e5).toISOString().slice(0, 10);
+  if (d < min) d = min;
+  for (; d <= end; d = new Date(Date.parse(d + 'T12:00:00Z') + 864e5).toISOString().slice(0, 10)) {
+    const dow = new Date(d + 'T12:00:00Z').getUTCDay();
+    for (const s of L) if (s && s.time && Number(s.day) === dow && !S[`${d} ${s.time}`]) { n++; first = first || d; }
+  }
+  return { n, days: first ? Math.round((Date.parse(date) - Date.parse(first)) / 864e5) : 0 };
+}
+const daysWord = d => d === 1 ? 'يوم واحد' : d === 2 ? 'يومين' : d <= 10 ? `${d} أيام` : `${d} يوم`;
+const sessWord = k => k === 1 ? 'ميعاد واحد' : k === 2 ? 'ميعادين' : k <= 10 ? `${k} مواعيد` : `${k} ميعاد`;
 
 // ---------------- الفحص (لزرار "جرّب") ----------------
 async function beat(env, userId) {
