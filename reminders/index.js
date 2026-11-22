@@ -81,8 +81,20 @@ async function remindUser(env, p) {
     if (p.evening_enabled && due(p.evening_reminder) && await claim(env, uid, `evening:${date}`)) {
       const all = await db(env, `tasks?select=done&user_id=eq.${uid}&archived_at=is.null&due_on=eq.${date}`);
       const done = all.filter(t => t.done).length;
-      await sendToUser(env, uid, { title: 'راجع يومك', body: `خلصت ${done} من ${all.length} مهام النهاردة. سجّل رأيك في التيم واللي اتعمل.`, url: './#/today' });
+      await sendToUser(env, uid, { title: 'راجع يومك', body: `خلصت ${done} من ${all.length} مهام النهاردة. اكتب يومك كان عامل إزاي.`, url: './#/day?tab=lines' });
     }
+    });
+    // المناسبات: قبلها بيومين، ويومها (الساعة 9 الصبح أو بعدها أول ما الـ Worker يصحى)
+    await safe('occasions', async () => {
+      if (minutes < 9 * 60) return;
+      const occ = await db(env, `occasions?select=id,title,person,on_date,yearly,remind_days&user_id=eq.${uid}&archived_at=is.null`);
+      for (const o of occ) {
+        const nx = occNext(o, date); if (!nx) continue;
+        const left = Math.round((Date.parse(nx) - Date.parse(date)) / 864e5), before = o.remind_days ?? 2;
+        if ((left === 0 || left === before) && await claim(env, uid, `occ:${o.id}:${nx}:${left}`)) {
+          await sendToUser(env, uid, { title: left === 0 ? 'النهاردة مناسبة 🎉' : `بعد ${before === 2 ? 'يومين' : before + ' أيام'}: مناسبة`, body: o.title + (o.person ? ` (${o.person})` : ''), url: './#/life' });
+        }
+      }
     });
     await safe('goals', async () => {
     const goals = await db(env, `goals?select=id,title,due_on,reminder_time&user_id=eq.${uid}&status=eq.active&archived_at=is.null&reminder_enabled=is.true`);
@@ -177,6 +189,14 @@ async function morningSummary(env, p, open) {
   if (ideas.length === 1) L.push(`• فكرة هتفكّرك بيها النهاردة: ${ideas[0].title}`);
   else if (ideas.length) L.push(`• ${ideas.length} أفكار هتفكّرك بيها النهاردة`);
 
+  // قرارات جه ميعاد مراجعتها، ومناسبات قريبة (خلال 3 أيام)
+  const decs = await db(env, `decisions?select=title&user_id=eq.${uid}&archived_at=is.null&outcome=is.null&review_on=lte.${date}`).catch(() => []);
+  if (decs.length === 1) L.push(`• قرار جه ميعاد مراجعته: ${decs[0].title}`);
+  else if (decs.length) L.push(`• ${decs.length} قرارات جه ميعاد مراجعتها`);
+  const occ = (await db(env, `occasions?select=title,person,on_date,yearly&user_id=eq.${uid}&archived_at=is.null`).catch(() => []))
+    .map(o => ({ o, nx: occNext(o, date) })).filter(x => x.nx).map(x => ({ ...x, left: Math.round((Date.parse(x.nx) - Date.parse(date)) / 864e5) })).filter(x => x.left <= 3).sort((a, b) => a.left - b.left);
+  for (const x of occ.slice(0, 3)) L.push(`• ${x.left === 0 ? 'النهاردة' : x.left === 1 ? 'بكرة' : x.left === 2 ? 'بعد بكرة' : 'بعد 3 أيام'}: ${x.o.title}${x.o.person ? ` (${x.o.person})` : ''}`);
+
   return { title: `صباح الخير يا ${name}`, body: L.join('\n'), url: lateC.length ? './#/courses' : './#/today' };
 }
 
@@ -240,6 +260,14 @@ function localNow(tz) {
 }
 
 // بيسجل إن التذكير ده اتبعت. لو كان متسجل قبل كده بيرجع false، فمفيش إشعار بيتكرر
+// أقرب مرة جاية للمناسبة (لو بتتكرر كل سنة)
+function occNext(o, t) {
+  if (!o.on_date) return null;
+  if (!o.yearly) return o.on_date >= t ? o.on_date : null;
+  const md = o.on_date.slice(5), y = Number(t.slice(0, 4));
+  const fix = yy => md === '02-29' && !(yy % 4 === 0 && (yy % 100 !== 0 || yy % 400 === 0)) ? `${yy}-02-28` : `${yy}-${md}`;
+  return fix(y) >= t ? fix(y) : fix(y + 1);
+}
 async function claim(env, userId, key) {
   const r = await fetch(`${env.SUPABASE_URL}/rest/v1/reminder_log?on_conflict=user_id,key`, {
     method: 'POST', headers: { ...auth(env), 'Content-Type': 'application/json', Prefer: 'resolution=ignore-duplicates,return=representation' },
