@@ -9,8 +9,8 @@ export const sb = configured
   ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false } })
   : null;
 
-const TABLES = ['profiles','company','company_metrics','company_log','ideas','goals','plan_steps','recurring_tasks','tasks','links','problems','role_criteria','team_members','member_ratings','member_notes','weekly_reviews','courses','org_units','sops','job_roles','positions','candidates','projects','project_clients','project_devs','project_dev_notes','wallets','assets','investments','investment_returns','debts','debt_payments','commitments','budget_categories','expenses','incomes','financial_goals','net_worth_snapshots','push_subscriptions','day_logs','day_plans','habits','habit_logs','life_tracks','life_areas','departments','waiting_for','owner_points','inbox','templates'];
-const ARCH = new Set(['company_metrics','company_log','ideas','goals','recurring_tasks','tasks','problems','team_members','courses','sops','positions','candidates','projects','project_clients','project_devs','wallets','assets','investments','debts','commitments','budget_categories','expenses','incomes','financial_goals','day_logs','habits','life_tracks','life_areas','departments','waiting_for','owner_points','inbox','templates']);
+const TABLES = ['profiles','company','company_metrics','company_log','ideas','goals','plan_steps','recurring_tasks','tasks','links','problems','role_criteria','team_members','member_ratings','member_notes','weekly_reviews','courses','org_units','sops','job_roles','positions','candidates','projects','project_clients','project_devs','project_dev_notes','wallets','assets','investments','investment_returns','debts','debt_payments','commitments','budget_categories','expenses','incomes','financial_goals','net_worth_snapshots','push_subscriptions','day_logs','day_plans','habits','habit_logs','life_tracks','life_areas','departments','waiting_for','owner_points','inbox','templates','day_journal','media','learnings','decisions','lessons','occasions'];
+const ARCH = new Set(['company_metrics','company_log','ideas','goals','recurring_tasks','tasks','problems','team_members','courses','sops','positions','candidates','projects','project_clients','project_devs','wallets','assets','investments','debts','commitments','budget_categories','expenses','incomes','financial_goals','day_logs','habits','life_tracks','life_areas','departments','waiting_for','owner_points','inbox','templates','media','learnings','decisions','lessons','occasions']);
 const KEY = { profiles: 'user_id', company: 'user_id' };
 const NO_UPDATED = new Set(['links','member_notes','project_dev_notes','investment_returns','debt_payments','expenses','incomes','net_worth_snapshots','push_subscriptions','role_criteria','budget_categories','habit_logs']);
 const todayStr = () => { const d = new Date(); return new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10); };
@@ -30,6 +30,8 @@ const DEFAULTS = {
   habits: () => ({ active: true, days: [0, 1, 2, 3, 4, 5, 6], sort: 0 }), habit_logs: () => ({ on_date: todayStr() }),
   life_tracks: () => ({ sort: 0 }), life_areas: () => ({ sort: 0 }), departments: () => ({ sort: 0 }),
   waiting_for: () => ({ done: false }), owner_points: () => ({ status: 'open' }), templates: () => ({ items: [] }),
+  media: () => ({ kind: 'book', status: 'active', current_page: 0, current_minutes: 0 }), learnings: () => ({ status: 'new' }),
+  decisions: () => ({ decided_on: todayStr() }), lessons: () => ({ source: 'other' }), occasions: () => ({ yearly: true, remind_days: 2 }),
 };
 
 // ---------------- التخزين على الجهاز (IndexedDB) ----------------
@@ -133,6 +135,9 @@ function view(name) {
       ...T('courses').filter(A).map(r => ({ kind: 'course', id: r.id, title: r.title, body: r.learned, meta: r.status })),
       ...T('sops').filter(A).map(r => ({ kind: 'sop', id: r.id, title: r.title, body: r.body, meta: String(r.version) })),
       ...T('company_log').filter(A).map(r => ({ kind: 'log', id: r.id, title: r.text, body: null, meta: r.happened_on })),
+      ...T('decisions').filter(A).map(r => ({ kind: 'decision', id: r.id, title: r.title, body: [r.why, r.expected, r.result].filter(Boolean).join(' '), meta: r.decided_on })),
+      ...T('lessons').filter(A).map(r => ({ kind: 'lesson', id: r.id, title: r.text, body: null, meta: r.source })),
+      ...T('media').filter(A).map(r => ({ kind: 'media', id: r.id, title: r.title, body: r.author, meta: r.kind })),
     ];
   }
   return T(name);
@@ -367,7 +372,7 @@ export const auth = {
 // ---------------- الربط بين أي حاجتين ----------------
 export const LINK_TABLE = { task: ['tasks','title'], goal: ['goals','title'], idea: ['ideas','title'], problem: ['problems','title'],
   member: ['team_members','name'], project: ['projects','name'], project_dev: ['project_devs','title'], course: ['courses','title'],
-  sop: ['sops','title'], position: ['positions','title'], candidate: ['candidates','name'], metric: ['company_metrics','label'], habit: ['habits','title'], area: ['life_areas','name'] };
+  sop: ['sops','title'], position: ['positions','title'], candidate: ['candidates','name'], metric: ['company_metrics','label'], habit: ['habits','title'], area: ['life_areas','name'], decision: ['decisions','title'], lesson: ['lessons','text'], media: ['media','title'] };
 
 export async function linksOf(type, id) {
   const [a, b] = await Promise.all([list('links', { eq: { from_type: type, from_id: id } }), list('links', { eq: { to_type: type, to_id: id } })]);

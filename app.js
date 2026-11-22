@@ -19,10 +19,13 @@ import { peopleGlobal } from './people.js';
 import { inboxGlobal } from './inbox.js';
 import { tplGlobal } from './templates.js';
 import './mentions.js';
+import { learnGlobal } from './learn.js';
+import lessons, { lessonGlobal } from './lessons.js';
 
-const SCREENS = { ...today, ...goals, ...team, ...company, ...misc, ...projects, ...money, ...more, ...review, ...insights, ...habits, ...compare, ...life };
-const GLOBAL = { ...goalGlobal, ...teamGlobal, ...projectGlobal, ...moneyGlobal, ...moreGlobal, ...insightGlobal, ...habitGlobal, ...lifeGlobal, ...peopleGlobal, ...inboxGlobal, ...tplGlobal, ...taskActions, ...stepActions, ...linkActions, ...captureActions,
-  'close-sheet': closeSheet, capture: openCapture, menu: openMenu, 'close-menu': closeMenu };
+const SCREENS = { ...today, ...goals, ...team, ...company, ...misc, ...projects, ...money, ...more, ...review, ...insights, ...habits, ...compare, ...life, ...lessons };
+const GLOBAL = { ...goalGlobal, ...teamGlobal, ...projectGlobal, ...moneyGlobal, ...moreGlobal, ...insightGlobal, ...habitGlobal, ...lifeGlobal, ...peopleGlobal, ...inboxGlobal, ...tplGlobal, ...learnGlobal, ...lessonGlobal, ...taskActions, ...stepActions, ...linkActions, ...captureActions,
+  'close-sheet': closeSheet, capture: openCapture, menu: openMenu, 'close-menu': closeMenu,
+  'nav-back'() { const top = navStack[navStack.length - 1]; location.hash = top ? top.hash : '#/today'; } };
 
 const $ = s => document.querySelector(s);
 let current = null;   // { screen, params }
@@ -44,8 +47,22 @@ function renderDock(active) {
     : `<div class="mic"><button data-act="capture" aria-label="سجّل بسرعة">${ic('mic', 26)}</button></div>`).join('');
 }
 
+// ---------- زرار الرجوع: بيفتكر إنت جيت منين، ومكتوب عليه اسم الصفحة اللي كنت فيها ----------
+let navStack = [], curTitle = '', navReset = false;
+const routeOf = h => (h || '#/today').split('?')[0];
+function trackNav(oldHash, newHash) {
+  if (navReset) { navStack = []; navReset = false; return; }   // دخلت من الشريط اللي تحت أو القايمة: بداية جديدة
+  if (routeOf(oldHash) === routeOf(newHash)) return;            // نفس الصفحة، اتغير تبويب بس
+  const top = navStack[navStack.length - 1];
+  if (top && routeOf(top.hash) === routeOf(newHash)) navStack.pop();   // رجعت للي قبلها
+  else if (curTitle) { navStack.push({ hash: oldHash, title: curTitle }); if (navStack.length > 20) navStack.shift(); }
+}
 function renderTop(v) {
-  const left = v.back
+  curTitle = v.title || '';
+  const prev = navStack[navStack.length - 1];
+  const left = prev
+    ? `<button class="rb" data-act="nav-back" aria-label="ارجع لـ ${esc(prev.title)}" style="width:auto;max-width:46%;padding:0 12px 0 10px;gap:4px">${ic('back')}<span style="font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(prev.title)}</span></button>`
+    : v.back
     ? `<a href="${v.back}" class="rb" aria-label="رجوع">${ic('back')}</a>`
     : `<button class="rb" data-act="menu" aria-label="القائمة">${ic('menu')}</button>`;
   $('#top').innerHTML = `${left}<div class="t">${v.sub ? `<div class="s">${esc(v.sub)}</div>` : ''}<h1${(v.title || '').length > 14 ? ' class="long"' : ''}>${esc(v.title || '')}</h1></div>
@@ -132,6 +149,7 @@ async function prefetchTabs() {
 // ---------- التعامل مع الضغطات ----------
 function findAction(name) { return current?.screen.actions?.[name] || GLOBAL[name]; }
 document.addEventListener('click', e => {
+  if (e.target.closest('#dock a, #drawer a[href]')) navReset = true;
   const el = e.target.closest('[data-act]');
   if (!el) return;
   const fn = findAction(el.dataset.act);
@@ -158,6 +176,7 @@ document.addEventListener('change', e => {
 });
 window.addEventListener('hashchange', e => {
   try { scrollPos.set(new URL(e.oldURL).hash || '#/today', window.scrollY); } catch (_) {}
+  try { trackNav(new URL(e.oldURL).hash || '#/today', location.hash || '#/today'); } catch (_) {}
   closeSheet(); closeMenu(); render();
 });
 
@@ -171,8 +190,8 @@ function openMenu() {
     : `<a href="${href}">${ic(icon, 21)}<span>${label}</span>${meta ? `<span class="mut">${meta}</span>` : ''}</a>`;
   d.innerHTML = `<div class="back" data-act="close-menu"></div><nav class="panel" aria-label="القائمة">
     <div style="padding:22px 20px 14px;border-bottom:1px dashed var(--line)"><div class="disp" style="font-size:26px">نوتة بلال</div><div class="mut">Fix Team</div></div>
-    <div class="gh">حياتي</div>${item('#/life', 'star', 'حياتي', 'المسارات والمجالات')}${item('#/habits', 'repeat', 'عاداتي')}${item('#/courses', 'book', 'الكورسات')}${item('#/compare', 'chart', 'مقارنة الشهور')}
-    <div class="gh">الشغل</div>${item('#/problems', 'alert', 'سجل المشاكل')}${item('#/structure', 'tree', 'الهيكل والنظام')}${item('#/hiring', 'user', 'التوظيف')}
+    <div class="gh">حياتي</div>${item('#/life', 'star', 'حياتي', 'المسارات والمجالات')}${item('#/habits', 'repeat', 'عاداتي')}${item('#/courses', 'book', 'تعلّمي', 'كورسات وكتب وبودكاست')}${item('#/compare', 'chart', 'مقارنة الشهور')}
+    <div class="gh">الشغل</div>${item('#/problems', 'alert', 'سجل المشاكل')}${item('#/lessons', 'check', 'الدروس والقرارات')}${item('#/structure', 'tree', 'الهيكل والنظام')}${item('#/hiring', 'user', 'التوظيف')}
     <div class="gh">متابعة</div>${item('#/day', 'clock', 'يومي', 'وقتي ونسبي')}${item('#/weekly', 'review', 'المراجعات الأسبوعية')}${item('#/recurring', 'repeat', 'مهام جاهزة', 'متكررة وقوالب')}${item('#/calendar', 'cal', 'التقويم')}
     <div class="gh">شغلي الخاص</div>${item('#/projects', 'layers', 'مشاريعي')}${item('#/money', 'wallet', 'فلوسي', 'مقفول')}
     <div class="gh">تقارير</div>${item('#/progress', 'chart', 'تقدّم الشركة')}${item('#/report', 'doc', 'تقرير للمالك')}

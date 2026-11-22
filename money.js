@@ -28,6 +28,10 @@ async function bioUnlock(fresh = false) {
   return true;
 }
 
+// فلوسي مفتوحة دلوقتي؟ (القفل مقفول من الإعدادات، أو فتحتها ببصمة من أقل من ربع ساعة). بتستخدمها الصفحات التانية اللي فيها فلوس
+export async function moneyOpen() { const pr = await single('profiles'); return pr?.money_lock_enabled === false || !!unlocked(); }
+export const lockedRow = (label = 'الفلوس') => `<div class="card row" style="gap:10px;padding:10px 14px">${ic('wallet', 20)}<span style="flex:1">${label} <span class="mut">(مقفولة)</span></span><button class="btn sm" data-act="unlock-bio">افتح ببصمة</button><button class="btn sm" data-act="unlock-pass" style="border:0;background:none">بالباسورد</button></div>`;
+
 function lockScreen() {
   const has = !!localStorage.getItem(CRED);
   return { title: 'فلوسي', back: '#/today', noSearch: true, html: `<div class="stack" style="align-items:center;text-align:center;padding-top:8vh;gap:18px">
@@ -84,11 +88,15 @@ const st = { flow: 'out', debt: 'owe' };
 let snapDone = false;
 
 // ---------------- الشيتات ----------------
-function expenseSheet(cats, e = {}) {
+async function expenseSheet(cats, e = {}, pre = null) {
+  const [C, Md] = await Promise.all([list('courses', { order: 'title' }), list('media', { order: 'title' })]);
+  const lv = pre || (e.learn_id ? e.learn_type + ':' + e.learn_id : '');
+  const learnSel = C.length || Md.length ? `<label class="field"><span>تبع كورس أو كتاب؟ (اختياري)</span><select name="learn"><option value="">لأ</option>${opts([...C.map(c => ['course:' + c.id, 'كورس: ' + c.title]), ...Md.map(m => ['media:' + m.id, (m.kind === 'book' ? 'كتاب: ' : m.kind === 'podcast' ? 'بودكاست: ' : 'كتاب مسموع: ') + m.title])], lv)}</select></label>` : '';
   openSheet(e.id ? 'مصروف' : 'مصروف جديد', `<div class="grid2"><label class="field"><span>المبلغ</span><input name="amount" inputmode="decimal" value="${e.amount ?? ''}" autofocus></label>
     <label class="field"><span>البند</span><select name="category_id"><option value="">من غير</option>${opts(cats.map(c => [c.id, c.name]), e.category_id)}</select></label></div>
     <label class="field"><span>على إيه؟</span><input name="note" value="${esc(e.note)}" placeholder="بنزين، غدا…"></label>
     <label class="field"><span>اليوم</span><input type="date" name="spent_on" value="${e.spent_on || today()}"></label>
+    ${learnSel}
     <div class="btns">${e.id ? `<button class="btn" data-act="exp-archive" data-id="${e.id}">${ic('archive', 18)}شيله</button>` : ''}<button class="btn pri" data-act="exp-save" data-id="${e.id || ''}">حفظ</button></div>`);
 }
 function incomeSheet(i = {}) {
@@ -330,7 +338,8 @@ const save = async (table, id, row, msg) => { try { if (id) await upd(table, id,
 export const moneyGlobal = {
   ...lockActions,
   'hide-toggle'() { try { localStorage.setItem('nota.hide', hidden() ? '0' : '1'); } catch (e) {} doRefresh(); },
-  async 'exp-save'(el) { const f = formOf(sheetEl()); const a = num(f.amount); if (!a) return toast('اكتب المبلغ'); await save('expenses', el.dataset.id, { amount: a, category_id: f.category_id || null, note: f.note || null, spent_on: f.spent_on || today() }); },
+  async 'exp-save'(el) { const f = formOf(sheetEl()); const a = num(f.amount); if (!a) return toast('اكتب المبلغ'); await save('expenses', el.dataset.id, { amount: a, category_id: f.category_id || null, note: f.note || null, spent_on: f.spent_on || today(), ...(f.learn !== undefined ? { learn_type: f.learn ? f.learn.split(':')[0] : null, learn_id: f.learn ? f.learn.split(':')[1] : null } : {}) }); },
+  async 'exp-for'(el) { expenseSheet(await list('budget_categories', { order: 'sort' }), {}, el.dataset.v); },
   async 'exp-archive'(el) { closeSheet(); await archiveWithUndo('expenses', el.dataset.id, 'المصروف اتشال'); },
   async 'inc-save'(el) { const f = formOf(sheetEl()); const a = num(f.amount); if (!a) return toast('اكتب المبلغ'); await save('incomes', el.dataset.id, { amount: a, source: f.source || 'دخل', received_on: f.received_on || today(), expected: !!f.expected }); },
   async 'inc-archive'(el) { closeSheet(); await archiveWithUndo('incomes', el.dataset.id, 'الدخل اتشال'); },

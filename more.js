@@ -5,8 +5,9 @@ import { linksSlot, fillLinks, archiveWithUndo, doRefresh } from './comps.js';
 import { lifeData, taPicker, taRow, taValue, trackByName } from './life.js';
 import { deptData } from './people.js';
 import { tplBody } from './templates.js';
+import { learnBlock, spendBlock, applyCards, mediaView } from './learn.js';
 
-const st = { course: 'active', org: 'depts', hire: '', rec: 'rec' };
+const st = { learn: 'courses', course: 'active', org: 'depts', hire: '', rec: 'rec' };
 const CSTAT = [['active', 'شغال فيها'], ['done', 'خلصت'], ['wishlist', 'عايز آخدها']];
 const STAGE = [['applied', 'اتقدم', ''], ['interview', 'مقابلة', 'amb'], ['trial', 'تجربة', ''], ['hired', 'اتعين', 'ok'], ['rejected', 'اترفض', 'out']];
 const DAYS = [[6, 'س'], [0, 'ح'], [1, 'ن'], [2, 'ث'], [3, 'ر'], [4, 'خ'], [5, 'ج']];
@@ -107,8 +108,10 @@ async function courseSheet(c = {}) {
     </div>
     <div class="grid2"><label class="field"><span>عدد الدروس</span><input name="lessons_total" inputmode="numeric" value="${c.lessons_total ?? ''}"></label>
     <label class="field"><span>خلصت كام</span><div class="row"><input name="lessons_done" inputmode="numeric" value="${c.lessons_done ?? 0}"><button type="button" class="btn sm" data-act="lesson-plus" aria-label="درس كمان">+1</button></div></label></div>
-    <label class="field"><span>أهم حاجة اتعلمتها</span><textarea name="learned" rows="3">${esc(c.learned)}</textarea></label>
+    ${c.id ? await learnBlock('course', c.id) : '<p class="mut" style="margin:0;font-size:13px">بعد ما تحفظ، تقدر تكتب جواه اللي اتعلمته.</p>'}
+    <label class="field"><span>ملخص الكورس (اختياري)</span><textarea name="learned" rows="2">${esc(c.learned)}</textarea></label>
     <label class="field"><span>طبقته في إيه في الشغل؟</span><input name="applied_in" value="${esc(c.applied_in)}" placeholder="مثلًا: نظام التحصيل الجديد"></label>
+    ${c.id ? await spendBlock('course', c.id) : ''}
     ${c.id ? linksSlot('course', c.id) : ''}
     <div class="btns">${c.id ? `<button class="btn" data-act="course-archive" data-id="${c.id}">${ic('archive', 18)}أرشيف</button>` : ''}<button class="btn pri" data-act="course-save" data-id="${c.id || ''}">حفظ</button></div>`);
   if (c.id) fillLinks(sheetEl());
@@ -212,15 +215,23 @@ const recText = r => r.rule === 'daily' ? 'كل يوم' : r.rule === 'monthly' ?
 
 export default {
   courses: {
-    async render() {
+    async render(p) {
+      if (p?.query?.tab) st.learn = p.query.tab === 'media' ? 'media' : 'courses';
+      const top = `<div class="seg">${[['courses', 'كورسات'], ['media', 'كتب وبودكاست']].map(([k, l]) => `<button class="${st.learn === k ? 'on' : ''}" data-act="ltab" data-v="${k}">${l}</button>`).join('')}</div>`;
+      const ask = await applyCards();
+      if (st.learn === 'media') {
+        const mv = await mediaView(st.course);
+        return { title: 'تعلّمي', sub: `${mv.count('active')} شغال فيهم · ${mv.count('done')} خلصتهم`, back: '#/today', fab: { label: 'كتاب أو بودكاست', act: 'media-new' },
+          html: `<div class="stack">${top}${ask}<div class="seg">${[['active', 'شغال فيه'], ['done', 'خلصته'], ['wishlist', 'عايزه']].map(([k, l]) => `<button class="${st.course === k ? 'on' : ''}" data-act="ctab" data-v="${k}">${l} <span class="num">${mv.count(k)}</span></button>`).join('')}</div>${mv.html}</div>` };
+      }
       const all = await list('courses', { order: 'created_at', asc: false });
       const LT = Object.fromEntries(all.map(c => [c.id, courseLate(c)]));
       const L = all.filter(c => c.status === st.course).sort((a, b) => LT[b.id].days - LT[a.id].days);   // المتأخر الأول
       const lateN = all.filter(c => LT[c.id].missed.length).length;
       return {
-        title: 'الكورسات', sub: `${all.filter(c => c.status === 'active').length} شغال فيهم · ${all.filter(c => c.status === 'done').length} خلصوا${lateN ? ` · ${lateN} متأخر` : ''}`, back: '#/today',
+        title: 'تعلّمي', sub: `${all.filter(c => c.status === 'active').length} شغال فيهم · ${all.filter(c => c.status === 'done').length} خلصوا${lateN ? ` · ${lateN} متأخر` : ''}`, back: '#/today',
         fab: { label: 'كورس', act: 'course-new' },
-        html: `<div class="stack"><div class="seg">${CSTAT.map(([k, l]) => `<button class="${st.course === k ? 'on' : ''}" data-act="ctab" data-v="${k}">${l} <span class="num">${all.filter(c => c.status === k).length}</span></button>`).join('')}</div>
+        html: `<div class="stack">${top}${ask}<div class="seg">${CSTAT.map(([k, l]) => `<button class="${st.course === k ? 'on' : ''}" data-act="ctab" data-v="${k}">${l} <span class="num">${all.filter(c => c.status === k).length}</span></button>`).join('')}</div>
           ${L.length ? L.map(c => { const p = c.lessons_total ? c.lessons_done / c.lessons_total * 100 : (c.status === 'done' ? 100 : 0);
             const nx = nextSlot(c);
             const lt = LT[c.id];
@@ -234,7 +245,7 @@ export default {
       };
     },
     actions: {
-      ctab(el) { st.course = el.dataset.v; doRefresh(); }, 'course-new': () => courseSheet(), async 'course-open'(el) { courseSheet(await one('courses', el.dataset.id)); },
+      ctab(el) { st.course = el.dataset.v; doRefresh(); }, ltab(el) { st.learn = el.dataset.v; doRefresh(); }, 'course-new': () => courseSheet(), async 'course-open'(el) { courseSheet(await one('courses', el.dataset.id)); },
       // أخدته / مش هعوضه لميعاد واحد
       async sess(el) {
         const c = await one('courses', el.dataset.id); if (!c) return;

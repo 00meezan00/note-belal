@@ -9,6 +9,8 @@ import { smartCheck } from './goalwiz.js';
 import { lateWaiting, daysAgo } from './people.js';
 import { inboxCard } from './inbox.js';
 import { monthNumbers } from './compare.js';
+import { decisionsDue } from './lessons.js';
+import { applyDue } from './learn.js';
 
 // "حاجات مستنياك": كل اللي محتاج منك قرار أو متابعة، في كارت واحد، وكل سطر بيوديك للحاجة نفسها
 async function waitingForYou(ws) {
@@ -23,6 +25,7 @@ async function waitingForYou(ws) {
   const unrated = team.filter(m => !ratings.some(r => r.member_id === m.id && Object.values(r.scores || {}).some(Number)));
   const quiet = team.filter(m => { const last = notes.filter(x => x.member_id === m.id && !x.month).map(x => x.noted_on).sort().pop(); return !last || daysAgo(last) >= 14; });
   const oldP = problems.filter(p => p.status !== 'solved' && daysAgo(p.created_at) > 14);
+  const [decs, learns] = await Promise.all([decisionsDue(), applyDue()]);
   const names = (L, k = 'name') => esc(L.slice(0, 3).map(x => x[k]).join('، ') + (L.length > 3 ? '…' : ''));
   const row = (n, icon, text, sub, href, act = '') => n ? `<${href ? `a href="${href}"` : `button data-act="${act}"`} class="lnk"><span class="k">${ic(icon, 18)}</span><span class="t">${text}<small>${sub}</small></span><b class="num">${n}</b></${href ? 'a' : 'button'}>` : '';
   const rows = [
@@ -33,6 +36,8 @@ async function waitingForYou(ws) {
     row(badG.length, 'goal', 'أهداف متأخرة أو ناقصة', names(badG, 'title'), '#/goals'),
     row(unrated.length, 'star', 'لسه ماقيّمتهمش الشهر ده', names(unrated), '#/team'),
     row(quiet.length, 'review', 'بقالك أسبوعين مكتبتش عنهم', names(quiet), '#/team'),
+    row(decs.length, 'check', 'قرارات جه ميعاد مراجعتها', names(decs, 'title'), '#/lessons'),
+    row(learns.length, 'book', 'حاجات اتعلمتها: طبّقتها؟', names(learns, 'text'), '#/courses'),
     row(oldP.length, 'alert', 'مشاكل مفتوحة بقالها أكتر من أسبوعين', names(oldP, 'title'), '#/problems'),
   ].filter(Boolean);
   return `<div class="card" style="padding:10px 14px"><b style="font-weight:600">حاجات مستنياك</b>${rows.length ? `<div class="list">${rows.join('')}</div>` : '<div class="mut" style="padding:8px 0">مفيش حاجة مستنياك. أسبوع نضيف.</div>'}</div>`;

@@ -9,6 +9,7 @@ import { goalWizard, smartCheck, missingTag, wizGlobal } from './goalwiz.js';
 import { courseLate } from './more.js';
 import { habitStats } from './habits.js';
 import { withMentions } from './mentions.js';
+import { goalMinutes, durText } from './insights.js';
 
 const STAGES = [['raw', 'خام'], ['developing', 'بتتطور'], ['ready', 'جاهزة']];
 // فكرة نايمة: بقالها 30 يوم أو أكتر محدش لمسها (لا اتعدلت ولا اتغيرت مرحلتها). بيرجع عدد الأيام، أو 0 لو صاحية
@@ -104,7 +105,7 @@ export default {
         list('links', { eq: { to_type: 'goal', to_id: g.id, from_type: 'task' } }),
       ]);
       const tasks = tl.length ? await list('tasks', { in: ['id', tl.map(l => l.from_id)], order: 'due_on' }) : [];
-      const d = await lifeData(), sc = smartCheck(g), num = goalNumber(g), served = await servedCard(g);
+      const d = await lifeData(), sc = smartCheck(g), num = goalNumber(g), served = await servedCard(g), mins = await goalMinutes(g.id);
       const pr = prog[0] || {}; const late = g.status === 'active' && g.due_on && g.due_on < today();
       const metric = metrics.find(m => m.id === g.metric_id);
       return {
@@ -117,7 +118,8 @@ export default {
           <div class="card stack" style="gap:8px">${bat(pr.progress || 0, g.status === 'done' ? 'done' : late ? 'late' : 'run')}
             ${num ? `<div class="row" style="gap:8px;flex-wrap:wrap"><span style="flex:1;line-height:1.5"><b>${esc(num.label)}</b>: <span class="num">${n(num.now)}</span>${esc(num.unit ? ' ' + num.unit : '')}<br><small class="mut">بدأت ${n(num.start)} · الهدف ${n(num.target)} · النسبة محسوبة من الرقم</small></span>
               ${g.status === 'done' ? '' : `<label class="row" style="gap:6px"><span class="mut" style="font-size:13px">وصلت لكام؟</span><input class="inp num" inputmode="decimal" style="width:90px;min-height:38px" value="${num.now}" data-change="goal-num"></label>`}</div>` : ''}
-            <div class="between mut"><span>${num ? '' : pr.steps_total ? `${pr.steps_done} من ${pr.steps_total} خطوات` : 'ضيف خطوات تحت'}</span><span class="${late ? 'late' : ''}">${g.status === 'done' ? 'اتحقق ' + fd(g.done_on) : g.status === 'paused' ? 'متوقف' : g.due_on ? 'الموعد ' + fd(g.due_on) + ' · ' + dueText(g.due_on) : 'من غير موعد'}</span></div></div>
+            <div class="between mut"><span>${num ? '' : pr.steps_total ? `${pr.steps_done} من ${pr.steps_total} خطوات` : 'ضيف خطوات تحت'}</span><span class="${late ? 'late' : ''}">${g.status === 'done' ? 'اتحقق ' + fd(g.done_on) : g.status === 'paused' ? 'متوقف' : g.due_on ? 'الموعد ' + fd(g.due_on) + ' · ' + dueText(g.due_on) : 'من غير موعد'}</span></div>
+            ${mins >= 1 ? `<div class="row mut" style="gap:6px;font-size:13px">${ic('clock', 16)}<span>اشتغلت عليه ${durText(mins)} (من "يومي")</span></div>` : ''}</div>
           ${g.status === 'done' ? `<div class="card" style="border-color:var(--ok)"><b>اتحقق في ${fd(g.done_on)}</b>${g.impact ? `<div>${esc(g.impact)}</div>` : ''}</div>` : `
           <div class="card row">${ic('bell', 22)}<div style="flex:1;line-height:1.4"><div style="font-weight:500">تذكير يومي</div><div class="mut">لحد ما الهدف يتحقق</div></div>
             <input type="time" class="inp" style="width:auto;min-height:40px" value="${g.reminder_time ? g.reminder_time.slice(0, 5) : '09:00'}" data-change="goal-remind-time" aria-label="الساعة">

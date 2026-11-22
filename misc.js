@@ -6,6 +6,7 @@ import { esc, ic, fd, today, empty, openSheet, closeSheet, sheetEl, formOf, toas
 import { KIND, hrefOf, linksSlot, fillLinks, archiveWithUndo, doRefresh, openTask } from './comps.js';
 import { lifeData, taPicker, taRow, taValue, trackByName } from './life.js';
 import { withMentions } from './mentions.js';
+import { relatedLessons, relatedBox, lessonFromProblem } from './lessons.js';
 
 const ps = { tab: 'open', cat: '' };
 const PSTAT = { open: ['مفتوحة', 'amb'], solving: ['بتتحل', ''], solved: ['اتحلت', 'ok'] };
@@ -18,6 +19,7 @@ async function problemSheet(p = {}) {
     <label class="field"><span>الحالة</span><select name="status">${opts(Object.entries(PSTAT).map(([k, v]) => [k, v[0]]), p.status || 'open')}</select></label>
     <label class="field"><span>السبب</span><textarea name="cause" rows="2">${esc(p.cause)}</textarea></label>
     <label class="field"><span>الحل</span><textarea name="solution" rows="2">${esc(p.solution)}</textarea></label>
+    ${p.id && p.status !== 'solved' ? relatedBox(await relatedLessons(p)) : ''}
     ${p.id ? `<div class="between card" style="padding:10px 14px"><span>اتكررت <b class="num">${p.occurrences}</b> مرة</span><button class="btn sm" data-act="prob-again" data-id="${p.id}">اتكررت تاني</button></div>
     ${linksSlot('problem', p.id)}
     <div class="btns"><button class="btn sm" data-act="prob-task" data-id="${p.id}">${ic('plus', 16)}اعمل منها مهمة</button><button class="btn sm" data-act="prob-goal" data-id="${p.id}">${ic('goal', 16)}اعمل منها هدف</button></div>` : ''}
@@ -25,7 +27,7 @@ async function problemSheet(p = {}) {
   if (p.id) fillLinks(sheetEl());
 }
 
-const ARCH_TABLES = [['tasks', 'title', 'مهمة'], ['goals', 'title', 'هدف'], ['ideas', 'title', 'فكرة'], ['problems', 'title', 'مشكلة'], ['team_members', 'name', 'فرد'], ['company_metrics', 'label', 'مؤشر'], ['company_log', 'text', 'تطور'], ['projects', 'name', 'مشروع'], ['project_devs', 'title', 'تطوير في مشروع'], ['project_clients', 'name', 'عميل مشروع'], ['courses', 'title', 'كورس'], ['sops', 'title', 'إجراء'], ['positions', 'title', 'مكان فاضي'], ['candidates', 'name', 'متقدم'], ['recurring_tasks', 'title', 'مهمة متكررة'], ['habits', 'title', 'عادة'], ['life_tracks', 'name', 'مسار'], ['life_areas', 'name', 'مجال']];
+const ARCH_TABLES = [['tasks', 'title', 'مهمة'], ['goals', 'title', 'هدف'], ['ideas', 'title', 'فكرة'], ['problems', 'title', 'مشكلة'], ['team_members', 'name', 'فرد'], ['company_metrics', 'label', 'مؤشر'], ['company_log', 'text', 'تطور'], ['projects', 'name', 'مشروع'], ['project_devs', 'title', 'تطوير في مشروع'], ['project_clients', 'name', 'عميل مشروع'], ['courses', 'title', 'كورس'], ['sops', 'title', 'إجراء'], ['positions', 'title', 'مكان فاضي'], ['candidates', 'name', 'متقدم'], ['recurring_tasks', 'title', 'مهمة متكررة'], ['habits', 'title', 'عادة'], ['life_tracks', 'name', 'مسار'], ['life_areas', 'name', 'مجال'], ['media', 'title', 'كتاب أو بودكاست'], ['decisions', 'title', 'قرار'], ['lessons', 'text', 'درس'], ['occasions', 'title', 'مناسبة']];
 
 export default {
   problems: {
@@ -58,7 +60,13 @@ export default {
       async 'prob-save'(el) {
         const f = formOf(sheetEl()); if (!f.title) return toast('اكتب المشكلة');
         const row = { title: f.title, ...taRow(f.ta, await lifeData(), 'category'), status: f.status, cause: f.cause || null, solution: f.solution || null, solved_on: f.status === 'solved' ? today() : null };
-        try { const x = el.dataset.id ? await upd('problems', el.dataset.id, row) : await ins('problems', row); await withMentions('problems', 'problem', x, f.title, 'category'); closeSheet(); doRefresh(); } catch (e) { fail(e); }
+        try {
+          const old = el.dataset.id ? await one('problems', el.dataset.id) : null;
+          if (old?.status === 'solved' && f.status === 'solved') row.solved_on = old.solved_on;
+          const x = el.dataset.id ? await upd('problems', el.dataset.id, row) : await ins('problems', row); await withMentions('problems', 'problem', x, f.title, 'category'); closeSheet(); doRefresh();
+          if (f.status === 'solved' && old?.status !== 'solved' && x?.id) lessonFromProblem(x);   // اتحلت دلوقتي: اتعلمت منها إيه؟
+          else if (!old && x?.id) { const R = await relatedLessons(x); if (R.length) openSheet('خد بالك: فيه دروس قديمة شبهها', relatedBox(R) + `<button class="btn pri" data-act="close-sheet">تمام</button>`); }
+        } catch (e) { fail(e); }
       },
       async 'prob-again'(el) { const x = await one('problems', el.dataset.id); try { await upd('problems', x.id, { occurrences: x.occurrences + 1, status: x.status === 'solved' ? 'open' : x.status }); problemSheet(await one('problems', x.id)); doRefresh(); } catch (e) { fail(e); } },
       async 'prob-task'(el) { const x = await one('problems', el.dataset.id); openTask(null, { title: 'حل: ' + x.title, _link: { type: 'problem', id: x.id, title: x.title } }); },
@@ -116,7 +124,7 @@ export default {
             <div class="seg" style="margin-top:8px">${[['system', 'زي الموبايل'], ['light', 'فاتح'], ['dark', 'ليلي']].map(([k, l]) => `<button class="${t === k ? 'on' : ''}" data-act="theme" data-v="${k}">${l}</button>`).join('')}</div></div>
           <div class="card list"><b style="font-weight:600;display:block;padding-bottom:4px">التذكيرات</b>
             ${row('الإشعارات على الموبايل', pushState === 'on' ? 'شغالة على الموبايل ده' : pushState === 'denied' ? 'مقفولة من إعدادات الآيفون: الإعدادات ← الإشعارات ← نوتة بلال' : pushState === 'unsupported' ? 'افتح التطبيق من أيقونة الشاشة الرئيسية الأول' : 'لسه مش متفعلة', pushState === 'on' ? (WORKER_URL ? '<button class="btn sm" data-act="push-test">جرّب</button>' : '') : pushState === 'unsupported' || pushState === 'denied' ? '' : '<button class="btn sm amb" data-act="push-enable">فعّل</button>')}
-            ${row('ملخص الصبح', `<div class="mut" style="font-size:13px">مهامك، والمتأخر، وكورسات النهاردة، والكورسات اللي فاتتك، وتذكيرات الأفكار</div><div class="row" style="gap:6px;margin-top:4px"><input type="time" class="inp" style="width:auto;min-height:36px" value="${(p?.morning_reminder || '08:30').slice(0, 5)}" data-change="pref-time" data-k="morning_reminder">${pushState === 'on' && WORKER_URL ? '<button class="btn sm" data-act="push-test" data-morning="1">ابعته دلوقتي</button>' : ''}</div>`, sw(p?.morning_enabled, 'data-act="pref" data-k="morning_enabled"'))}
+            ${row('ملخص الصبح', `<div class="mut" style="font-size:13px">مهامك، والمتأخر، والكورسات، والقرارات اللي محتاجة مراجعة، والمناسبات القريبة</div><div class="row" style="gap:6px;margin-top:4px"><input type="time" class="inp" style="width:auto;min-height:36px" value="${(p?.morning_reminder || '08:30').slice(0, 5)}" data-change="pref-time" data-k="morning_reminder">${pushState === 'on' && WORKER_URL ? '<button class="btn sm" data-act="push-test" data-morning="1">ابعته دلوقتي</button>' : ''}</div>`, sw(p?.morning_enabled, 'data-act="pref" data-k="morning_enabled"'))}
             ${row('تذكير بالليل تراجع يومك', `<input type="time" class="inp" style="width:auto;min-height:36px;margin-top:4px" value="${(p?.evening_reminder || '22:00').slice(0, 5)}" data-change="pref-time" data-k="evening_reminder">`, sw(p?.evening_enabled, 'data-act="pref" data-k="evening_enabled"'))}
             <div class="mut" style="padding-top:8px">تذكير كل هدف أو مهمة بيتظبط من جوّاه.${WORKER_URL ? '' : ' الإشعارات هتوصل بعد ما تعمل الـ Worker على Cloudflare.'}</div></div>
           <a class="card row" href="#/structure" style="gap:12px">${ic('tree', 22)}<div style="flex:1;line-height:1.5"><div style="font-weight:600">الأقسام والوظايف ومعايير التقييم</div><div class="mut">اتنقلت لـ "الهيكل والنظام" ← الأقسام</div></div>${ic('chev', 18)}</a>

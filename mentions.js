@@ -49,7 +49,8 @@ export async function withMentions(table, type, row, text, labelField = null) {
   if (area) await link(type, row.id, 'area', area.id);
   const track = !area && tracks.find(t => has('#', t.name));
   if (labelField && !row.area_id && (area || track)) {
-    const patch = area ? { track_id: area.track_id, area_id: area.id, [labelField]: area.name } : { track_id: track.id, [labelField]: track.name };
+    const patch = area ? { track_id: area.track_id, area_id: area.id } : { track_id: track.id };
+    if (labelField !== true) patch[labelField] = area ? area.name : track.name;   // true = اربط المسار والمجال بس من غير خانة اسم
     return upd(table, row.id, patch);
   }
   return row;

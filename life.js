@@ -1,7 +1,7 @@
 // حياتي: مسارات حياتك (الدواليب الكبيرة) وجوه كل مسار مجالاته (الأدراج)
 // أي حاجة في النوتة (هدف، فكرة، مشكلة، كورس، عادة، مشروع) بتتحط في مسار، ولو حبيت في مجال جوّاه
 import { list, ins, upd, archive } from './db.js';
-import { esc, ic, empty, openSheet, closeSheet, sheetEl, formOf, toast, fail, opts } from './ui.js';
+import { esc, ic, empty, openSheet, closeSheet, sheetEl, formOf, toast, fail, opts, today, fd, daysBetween } from './ui.js';
 import { doRefresh } from './comps.js';
 
 export const DEFAULT_TRACKS = ['شغلي في Fix Team', 'شغلي الخاص', 'فلوسي', 'تطويري', 'صحتي', 'عيلتي', 'ديني'];
@@ -70,6 +70,39 @@ function areaSheet(d, a = {}, trackId) {
     <div class="btns">${a.id ? `<button class="btn" data-act="area-del" data-id="${a.id}">${ic('archive', 18)}شيله</button>` : ''}<button class="btn pri" data-act="area-save" data-id="${a.id || ''}">حفظ</button></div>`);
 }
 
+// ---------- المناسبات (تحت مسار "عيلتي"): أعياد ميلاد، جواز، أي يوم مهم ----------
+// لو بتتكرر كل سنة: بنجيب أقرب مرة جاية لنفس اليوم والشهر
+export function occNext(o, t = today()) {
+  if (!o.on_date) return null;
+  if (!o.yearly) return o.on_date >= t ? o.on_date : null;
+  const md = o.on_date.slice(5), y = Number(t.slice(0, 4));
+  const fix = yy => md === '02-29' && !(yy % 4 === 0 && (yy % 100 !== 0 || yy % 400 === 0)) ? `${yy}-02-28` : `${yy}-${md}`;
+  return fix(y) >= t ? fix(y) : fix(y + 1);
+}
+const inDays = d => d === 0 ? 'النهاردة' : d === 1 ? 'بكرة' : d === 2 ? 'بعد بكرة' : `بعد ${d} يوم`;
+export async function nextOccasions(max = 3) {
+  const t = today();
+  return (await list('occasions')).map(o => ({ o, next: occNext(o, t) })).filter(x => x.next).sort((a, b) => a.next.localeCompare(b.next)).slice(0, max).map(x => ({ ...x, days: daysBetween(t, x.next) }));
+}
+async function occBlock() {
+  const N = await nextOccasions(3), all = await list('occasions');
+  return `<div class="stack" style="gap:6px;padding-top:6px;border-top:1px solid var(--line)"><div class="between"><span style="font-weight:600;font-size:15px">${ic('cal', 16)} أقرب المناسبات</span>${all.length > N.length ? `<button class="btn sm" data-act="occ-all" style="border:0;background:none">كلهم (${all.length})</button>` : ''}</div>
+    ${N.map(({ o, next, days }) => `<button class="row" data-act="occ-open" data-id="${o.id}" style="gap:8px;text-align:start;padding:6px 0;background:none;border:0;width:100%;cursor:pointer"><span style="flex:1;line-height:1.4">${esc(o.title)}${o.person ? ` <span class="mut">· ${esc(o.person)}</span>` : ''}<br><small class="mut">${fd(next)}</small></span><span class="tag ${days <= 2 ? 'amb' : ''}">${inDays(days)}</span></button>`).join('') || '<div class="mut" style="font-size:14px">سجّل أعياد الميلاد والمناسبات المهمة، وهفكّرك قبلها بيومين ويومها.</div>'}
+    <button class="btn dash sm" data-act="occ-new">+ مناسبة</button></div>`;
+}
+function occSheet(o = {}) {
+  openSheet(o.id ? 'المناسبة' : 'مناسبة جديدة', `<label class="field"><span>المناسبة</span><input name="title" value="${esc(o.title)}" ${o.id ? '' : 'autofocus'} placeholder="مثلًا: عيد ميلاد ماما"></label>
+    <label class="field"><span>تبع مين؟ (اختياري)</span><input name="person" value="${esc(o.person)}"></label>
+    <label class="field"><span>التاريخ</span><input type="date" name="on_date" value="${o.on_date || today()}"></label>
+    <label class="row card" style="padding:12px 14px"><input type="checkbox" name="yearly" ${o.yearly === false ? '' : 'checked'} style="width:22px;height:22px"><span style="flex:1">بتتكرر كل سنة</span></label>
+    <p class="mut" style="margin:0;font-size:13px">هيوصلك إشعار قبلها بيومين، ويومها الصبح، وهتظهر في ملخص الصبح.</p>
+    <div class="btns">${o.id ? `<button class="btn" data-act="occ-del" data-id="${o.id}">${ic('archive', 18)}شيلها</button>` : ''}<button class="btn pri" data-act="occ-save" data-id="${o.id || ''}">حفظ</button></div>`);
+}
+async function occAll() {
+  const t = today(), L = (await list('occasions')).map(o => ({ o, next: occNext(o, t) })).sort((a, b) => (a.next || '9').localeCompare(b.next || '9'));
+  openSheet('كل المناسبات', `<div class="list">${L.map(({ o, next }) => `<button class="row" data-act="occ-open" data-id="${o.id}" style="gap:8px;text-align:start;padding:8px 0;background:none;border:0;width:100%"><span style="flex:1">${esc(o.title)}${o.person ? ` <span class="mut">· ${esc(o.person)}</span>` : ''}</span><span class="mut" style="font-size:13px">${next ? fd(next) : 'عدّت'}</span></button>`).join('')}</div>`);
+}
+
 export default {
   life: {
     async render() {
@@ -79,6 +112,7 @@ export default {
       const live = { goals: r => r.status === 'active', problems: r => r.status !== 'solved', courses: r => r.status === 'active', habits: r => r.active !== false, ideas: r => r.stage !== 'converted', projects: () => true };
       const countLine = tid => ITEMS.map(([t, , l]) => { const k = I[t].filter(r => r.track_id === tid && live[t](r)).length; return k ? `${k} ${l}` : ''; }).filter(Boolean).join(' · ');
       const none = ITEMS.reduce((s, [t]) => s + I[t].filter(r => !r.track_id && live[t](r)).length, 0);
+      const famId = trackByName(d, 'عيلتي')?.id, occ = await occBlock();
       return {
         title: 'حياتي', sub: `${d.tracks.length} مسارات`, back: '#/today',
         fab: { label: 'مسار', act: 'track-new' },
@@ -88,7 +122,9 @@ export default {
               <div class="row" style="gap:8px"><b class="disp" style="font-size:19px;flex:1;cursor:pointer" data-act="track-open" data-id="${t.id}" role="button" tabindex="0">${esc(t.name)}</b><button class="star" data-act="track-open" data-id="${t.id}" aria-label="عدّل">${ic('edit', 16)}</button></div>
               <div class="mut" style="font-size:13px">${cl || 'لسه مفيش حاجة في المسار ده'}</div>
               <div class="row" style="flex-wrap:wrap;gap:6px">${A.map(a => `<button class="chip" style="padding:6px 10px" data-act="area-open" data-id="${a.id}">${esc(a.name)}</button>`).join('')}<button class="chip out" style="padding:6px 10px" data-act="area-new" data-track="${t.id}">+ مجال</button></div>
+              ${t.id === famId ? occ : ''}
             </div>`; }).join('')}
+          ${famId ? '' : `<div class="card stack" style="gap:6px"><b class="disp" style="font-size:19px">المناسبات</b>${occ}</div>`}
           ${none ? `<div class="mut" style="font-size:13px;text-align:center">فيه ${none} حاجة من غير مسار. افتحها واختارلها مسار.</div>` : ''}
           <p class="mut" style="margin:0;text-align:center;font-size:13px">دوس على اسم المسار أو المجال عشان تغيّر اسمه أو تشيله.</p>
         </div>`,
@@ -105,6 +141,15 @@ export default {
 };
 
 export const lifeGlobal = {
+  'occ-new': () => occSheet(),
+  async 'occ-open'(el) { const o = (await list('occasions')).find(x => x.id === el.dataset.id); o && occSheet(o); },
+  'occ-all': () => occAll(),
+  async 'occ-save'(el) {
+    const f = formOf(sheetEl()); if (!f.title || !f.on_date) return toast('اكتب المناسبة وتاريخها');
+    const row = { title: f.title, person: f.person || null, on_date: f.on_date, yearly: !!f.yearly };
+    try { if (el.dataset.id) await upd('occasions', el.dataset.id, row); else await ins('occasions', row); closeSheet(); doRefresh(); } catch (e) { fail(e); }
+  },
+  async 'occ-del'(el) { try { await archive('occasions', el.dataset.id); closeSheet(); toast('اتشالت'); doRefresh(); } catch (e) { fail(e); } },
   async 'track-save'(el) {
     const f = formOf(sheetEl()); if (!f.name) return toast('اكتب اسم المسار');
     try {

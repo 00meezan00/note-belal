@@ -2,8 +2,9 @@
 import { list, single, ins, upd, upsert, auth } from './db.js';
 import { esc, ic, bat, fd, today, addDays, n, empty, openSheet, closeSheet, sheetEl, formOf, toast, fail, LOC } from './ui.js';
 import { archiveWithUndo, doRefresh, AREAS } from './comps.js';
+import { moneyOpen, lockedRow } from './money.js';
 
-const st = { day: today() };
+const st = { day: today(), tab: 'now' };
 
 // ---------------- أدوات الوقت ----------------
 const pad = x => String(x).padStart(2, '0');
@@ -76,12 +77,13 @@ function dayStats(date, logs, w, now = Date.now()) {
   return { L, by, busy, total, rest, winMin, busyPct: Math.min(100, pct(busy, winMin)) };
 }
 
-function logSheet(l = {}) {
-  const date = l.on_date || st.day;
+async function logSheet(l = {}) {
+  const date = l.on_date || st.day, gopt = await goalOptions(l.goal_id);
   const f = l.started_at ? hm(l.started_at) : '', t = l.ended_at ? hm(l.ended_at) : '';
   openSheet(l.id ? 'اللي عملته' : 'سجّل حاجة عملتها', `
     <label class="field"><span>عملت إيه؟</span><input name="text" value="${esc(l.text)}" ${l.id ? '' : 'autofocus'} placeholder="مثلًا: اجتماع مع الفنيين"></label>
     <div class="field"><span>النوع</span>${kindPills(l.kind || 'co')}</div>
+    ${gopt}
     <div class="grid2"><label class="field"><span>من</span><input type="time" name="from" value="${f || l._from || ''}"></label>
     <label class="field"><span>لحد</span><input type="time" name="to" value="${t || l._to || ''}"></label></div>
     ${l.id && !l.ended_at ? '<p class="mut" style="margin:0">لسه شغال. سيب "لحد" فاضية لو لسه مخلصتش.</p>' : ''}
@@ -96,6 +98,7 @@ async function startSheet() {
     <label class="field"><span>بتعمل إيه دلوقتي؟</span><input name="text" autofocus placeholder="مثلًا: زيارة محلات"></label>
     ${open.length ? `<div class="field"><span class="mut" style="font-weight:500">أو اختار من مهامك</span><div class="pills" style="flex-wrap:wrap">${open.map(x => `<button type="button" data-act="start-fill" data-v="${esc(x.title)}">${esc(x.title.slice(0, 40))}</button>`).join('')}</div></div>` : ''}
     <div class="field"><span>النوع</span>${kindPills('co')}</div>
+    ${await goalOptions()}
     <p class="mut" style="margin:0">العداد هيشتغل، ولما تخلص دوس "خلصت". لو كان فيه حاجة شغالة، هتقف لوحدها.</p>
     <button class="btn amb" data-act="start-go">ابدأ العداد</button>`);
 }
@@ -106,6 +109,107 @@ async function windowSheet(w) {
     <label class="row card" style="padding:12px 14px"><input type="checkbox" name="all" ${w.own ? '' : 'checked'} style="width:22px;height:22px"><span style="flex:1">ده ميعادي الثابت لكل الأيام</span></label>
     <p class="mut" style="margin:0">لو شلت العلامة، الميعاد ده هيبقى ليوم ${fd(st.day)} بس.</p>
     <button class="btn pri" data-act="win-save">حفظ</button>`);
+}
+
+// ================= يومي: الأزرار التلاتة فوق =================
+const daySeg = () => `<div class="seg">${[['now', 'النهاردة'], ['lines', 'يومك في سطور'], ['hours', 'أحسن ساعاتك']].map(([k, l]) => `<button class="${st.tab === k ? 'on' : ''}" data-act="day-tab" data-v="${k}">${l}</button>`).join('')}</div>`;
+const dayNav = isToday => `<div class="between"><button class="rb" data-act="day-move" data-v="-1" aria-label="اليوم اللي قبله">${ic('back', 20)}</button>
+  ${isToday ? `<b class="disp" style="font-size:19px">النهاردة</b>` : `<button class="btn sm" data-act="day-today">ارجع للنهاردة</button>`}
+  <button class="rb" data-act="day-move" data-v="1" aria-label="اليوم اللي بعده" ${isToday ? 'disabled style="opacity:.35"' : ''}>${ic('chev', 20)}</button></div>`;
+const MOODS = [[1, '😞', 'وحش'], [2, '🙁', 'مش أحسن حاجة'], [3, '😐', 'عادي'], [4, '🙂', 'كويس'], [5, '😄', 'حلو جدًا']];
+
+// اختيار الهدف اللي الوقت ده بيخدمه
+async function goalOptions(cur) {
+  const G = await list('goals', { eq: { status: 'active' }, order: 'title' });
+  return G.length ? `<label class="field"><span>بيخدم أنهي هدف؟ (اختياري)</span><select name="goal"><option value="">من غير</option>${G.map(g => `<option value="${g.id}"${g.id === cur ? ' selected' : ''}>${esc(g.title)}</option>`).join('')}</select></label>` : '';
+}
+// ساعات اشتغلتها على هدف (صفحة الهدف بتستخدمها)
+export async function goalMinutes(goalId) {
+  return (await list('day_logs', { eq: { goal_id: goalId } })).reduce((s, l) => s + Math.max(0, ((l.ended_at ? Date.parse(l.ended_at) : Date.now()) - Date.parse(l.started_at)) / 6e4), 0);
+}
+export const durText = m => dur(m);
+
+// ---------- يومك في سطور: كل اللي حصل في اليوم مترتب بالساعة ----------
+async function linesView(d, isToday) {
+  const ld = x => x ? localDate(x) : '';
+  const [tasks, logs, ideas, problems, goals, notes, members, waits, habits, hlogs, points, learns, decs, lessons, journal, exps, incs, open] = await Promise.all([
+    list('tasks'), list('day_logs', { eq: { on_date: d } }), list('ideas'), list('problems'), list('goals'), list('member_notes', { eq: { noted_on: d } }), list('team_members'),
+    list('waiting_for'), list('habits'), list('habit_logs', { eq: { on_date: d } }), list('owner_points'), list('learnings'), list('decisions'), list('lessons'),
+    list('day_journal', { eq: { on_date: d } }), list('expenses', { eq: { spent_on: d } }), list('incomes', { eq: { received_on: d } }), moneyOpen()]);
+  const M = Object.fromEntries(members.map(m => [m.id, m.name])), G = Object.fromEntries(goals.map(g => [g.id, g.title]));
+  const timed = [], untimed = [];
+  const at = (ts, icon, text, color) => timed.push({ ts: Date.parse(ts), icon, text, color });
+  for (const x of tasks) if (x.done && ld(x.done_at) === d) at(x.done_at, 'check', 'خلصت: ' + x.title, 'var(--ok)');
+  for (const l of logs) at(l.started_at, 'clock', `${l.text} · ${l.ended_at ? dur((Date.parse(l.ended_at) - Date.parse(l.started_at)) / 6e4) : 'لسه شغال'}${l.goal_id && G[l.goal_id] ? ' · لهدف ' + G[l.goal_id] : ''}`, kc(l.kind));
+  for (const x of ideas) if (ld(x.created_at) === d) at(x.created_at, 'spark', 'فكرة: ' + x.title);
+  for (const x of problems) { if (ld(x.created_at) === d) at(x.created_at, 'alert', 'مشكلة جديدة: ' + x.title, 'var(--bad)'); if (x.solved_on === d) untimed.push(['check', 'اتحلت مشكلة: ' + x.title]); }
+  for (const g of goals) if (g.done_on === d) untimed.push(['goal', 'اتحقق هدف: ' + g.title]);
+  for (const x of notes) at(x.created_at, 'review', `${x.month ? 'تعليق الشهر على' : 'رأيك في'} ${M[x.member_id] || ''}: ${x.text}`);
+  for (const w of waits) { if (ld(w.created_at) === d) at(w.created_at, 'user', `طلبت من ${w.who}: ${w.text}`); if (w.done && w.done_on === d) untimed.push(['check', `وصلت من ${w.who}: ${w.text}`]); }
+  for (const x of points) if (x.discussed_on === d) untimed.push(['review', `اتكلمت مع ${M[x.member_id] || 'المالك'}: ${x.text}${x.decision ? ' ← ' + x.decision : ''}`]);
+  for (const x of learns) if (ld(x.created_at) === d) at(x.created_at, 'book', 'اتعلمت: ' + x.text);
+  for (const x of decs) if (x.decided_on === d) untimed.push(['check', 'قرار: ' + x.title]);
+  for (const x of lessons) if (ld(x.created_at) === d) at(x.created_at, 'book', 'درس: ' + x.text);
+  timed.sort((a, b) => a.ts - b.ts);
+  const H = Object.fromEntries(habits.map(h => [h.id, h.title])), hd = hlogs.map(l => H[l.habit_id]).filter(Boolean);
+  const j = journal[0] || {}, money = exps.length || incs.length;
+  const sum = L => L.reduce((s, x) => s + (Number(x.amount) || 0), 0);
+  const row = (when, icon, text, color) => `<div class="row" style="gap:10px;padding:8px 0;align-items:flex-start"><span class="num mut" style="width:56px;flex:none;font-size:12px;padding-top:2px">${when}</span><span class="k" style="width:26px;height:26px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex:none;${color ? `background:${color};color:#fff` : 'background:var(--mat)'}">${ic(icon, 15)}</span><span style="flex:1;line-height:1.5;font-size:14px">${esc(text)}</span></div>`;
+  return `<div class="stack">${daySeg()}${dayNav(isToday)}
+    <div class="card" style="padding:8px 14px"><div class="between" style="padding-top:4px"><b style="font-weight:600">${isToday ? 'النهاردة' : dayName(d) + ' ' + fd(d)}</b><span class="num mut">${timed.length + untimed.length}</span></div>
+      <div class="list">${timed.map(e => row(fmtTime(hm(new Date(e.ts).toISOString())), e.icon, e.text, e.color)).join('') || (untimed.length ? '' : `<div class="mut" style="padding:8px 0">${isToday ? 'لسه محصلش حاجة متسجلة النهاردة.' : 'متسجلش حاجة في اليوم ده.'}</div>`)}
+      ${untimed.map(([i, t]) => row('خلال اليوم', i, t)).join('')}</div></div>
+    ${hd.length ? `<div class="card row" style="gap:10px;padding:10px 14px">${ic('repeat', 18)}<span style="flex:1">عملت عاداتك: ${esc(hd.join('، '))}</span></div>` : ''}
+    ${money ? (open ? `<div class="card" style="padding:10px 14px"><div class="between"><b style="font-weight:600">فلوس اليوم</b><a href="#/money" class="mut" style="font-size:13px">فلوسي</a></div>
+        <div class="row" style="gap:16px;margin-top:6px">${exps.length ? `<span>صرفت <b class="num">${n(sum(exps))}</b> ج <span class="mut">(${exps.length})</span></span>` : ''}${incs.length ? `<span>دخل <b class="num">${n(sum(incs))}</b> ج</span>` : ''}</div>
+        <div class="list" style="margin-top:4px">${exps.map(e => `<div class="between" style="padding:5px 0;font-size:14px"><span>${esc(e.note || 'مصروف')}</span><span class="num">${n(e.amount)}</span></div>`).join('')}</div></div>` : lockedRow('فلوس اليوم')) : ''}
+    <div class="card stack" style="gap:10px"><b style="font-weight:600">${isToday ? 'يومك كان عامل إزاي؟' : 'اليوم ده كان عامل إزاي؟'}</b>
+      <div class="row" style="gap:6px">${MOODS.map(([v, e, l]) => `<button data-act="mood-set" data-v="${v}" aria-label="${l}" style="flex:1;min-height:52px;border-radius:12px;font-size:26px;border:${j.mood === v ? '2px solid var(--ink)' : '1px solid var(--line)'};background:${j.mood === v ? 'var(--amb-soft)' : 'transparent'};cursor:pointer">${e}</button>`).join('')}</div>
+      <textarea class="inp" rows="3" data-change="journal-text" placeholder="رأيك في يومك: إيه اللي مشي كويس؟ وإيه اللي ضايقك؟">${esc(j.text)}</textarea></div>
+  </div>`;
+}
+
+// ---------- أحسن ساعاتك: من آخر 30 يوم ----------
+async function hoursView() {
+  const t = today(), from = addDays(t, -29);
+  const [logs, journal, hlogs] = await Promise.all([list('day_logs', { gte: ['on_date', from], lte: ['on_date', t] }), list('day_journal', { gte: ['on_date', from] }), list('habit_logs', { gte: ['on_date', from] })]);
+  const work = logs.filter(l => l.kind !== 'rest' && l.started_at);
+  const byHour = Array(24).fill(0), byDow = Array(7).fill(0), perDay = {};
+  for (const l of work) {
+    let s = Date.parse(l.started_at); const e = l.ended_at ? Date.parse(l.ended_at) : Date.now();
+    perDay[l.on_date] = (perDay[l.on_date] || 0) + Math.max(0, e - s) / 6e4;
+    byDow[new Date(l.on_date + 'T12:00').getDay()] += Math.max(0, e - s) / 6e4;
+    while (s < e) { const d = new Date(s), nx = Math.min(e, new Date(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours() + 1).getTime()); byHour[d.getHours()] += (nx - s) / 6e4; s = nx; }
+  }
+  const days = Object.keys(perDay).length, total = Object.values(perDay).reduce((a, b) => a + b, 0);
+  if (days < 3) return `<div class="stack">${daySeg()}${empty('محتاج تسجّل وقتك في "يومي" كام يوم الأول (أسبوعين أحسن)، وبعدها هقولك إنت بتشتغل أحسن إمتى.')}</div>`;
+  let best = 0, bestAt = 0; for (let h = 0; h <= 21; h++) { const v = byHour[h] + byHour[h + 1] + byHour[h + 2]; if (v > best) { best = v; bestAt = h; } }
+  const DN = ['الأحد', 'الاتنين', 'التلات', 'الأربع', 'الخميس', 'الجمعة', 'السبت'];
+  const topDow = byDow.indexOf(Math.max(...byDow));
+  const used = byHour.map((v, h) => [h, v]).filter(([, v]) => v > 0), h0 = Math.min(...used.map(x => x[0])), h1 = Math.max(...used.map(x => x[0]));
+  const bars = vbars(byHour.slice(h0, h1 + 1).map((v, i) => ({ label: fmtHour(h0 + i), v: Math.round(v / 60 * 10) / 10, text: v >= 60 ? Math.round(v / 60) + 'س' : '', color: h0 + i >= bestAt && h0 + i < bestAt + 3 ? 'var(--amb)' : 'var(--ink)' })), { h: 150 });
+  // المزاج: بيتقارن بأيام الشغل الكتير وأيام العادات
+  const moods = journal.filter(x => x.mood);
+  let moodHtml = '';
+  if (moods.length >= 5) {
+    const avgOf = L => L.length ? (L.reduce((s, x) => s + x.mood, 0) / L.length).toFixed(1) : null;
+    const habitDays = new Set(hlogs.map(l => l.on_date));
+    const heavy = moods.filter(x => (perDay[x.on_date] || 0) >= 600), light = moods.filter(x => (perDay[x.on_date] || 0) < 600);
+    const withH = moods.filter(x => habitDays.has(x.on_date)), noH = moods.filter(x => !habitDays.has(x.on_date));
+    const lines = [`متوسط مزاجك: <b class="num">${avgOf(moods)}</b> من 5`];
+    if (withH.length >= 2 && noH.length >= 2) lines.push(`الأيام اللي عملت فيها عاداتك: <b class="num">${avgOf(withH)}</b> · من غيرها: <b class="num">${avgOf(noH)}</b>`);
+    if (heavy.length >= 2 && light.length >= 2) lines.push(`أيام الشغل أكتر من 10 ساعات: <b class="num">${avgOf(heavy)}</b> · الأقل: <b class="num">${avgOf(light)}</b>`);
+    moodHtml = `<div class="card stack" style="gap:6px"><b style="font-weight:600">مزاجك بيبقى أحسن إمتى؟</b>${lines.map(x => `<div style="font-size:14px;line-height:1.6">${x}</div>`).join('')}</div>`;
+  } else moodHtml = `<div class="card mut" style="font-size:14px">سجّل مزاجك في "يومك في سطور" ${5 - moods.length} أيام كمان، وهقولك مزاجك بيبقى أحسن إمتى.</div>`;
+  return `<div class="stack">${daySeg()}
+    <div class="card stack" style="background:var(--dock);border-color:var(--dock);color:#fff;gap:6px;padding:16px">
+      <div style="font-size:14px;color:#C9D2D9">أكتر وقت بتشتغل فيه</div>
+      <div class="disp" style="font-size:26px">من ${fmtHour(bestAt)} لـ ${fmtHour((bestAt + 3) % 24)}</div>
+      <div style="font-size:13px;color:#C9D2D9">حط فيه أهم حاجاتك. ومتوسط شغلك ${dur(total / days)} في اليوم (${days} يوم متسجل)</div></div>
+    <div class="card stack" style="gap:8px"><div class="between"><b style="font-weight:600">شغلك في كل ساعة</b><span class="mut" style="font-size:12px">آخر 30 يوم</span></div>${bars}</div>
+    <div class="grid2">${statBox(DN[topDow], 'أنشط يوم في الأسبوع')}${statBox(dur(total), 'شغل في آخر 30 يوم')}</div>
+    ${moodHtml}
+  </div>`;
 }
 
 // ================= تقدّم الشركة =================
@@ -186,7 +290,8 @@ export function progressReport(c) {
 
 export default {
   day: {
-    async render() {
+    async render(p) {
+      if (p?.query?.tab) st.tab = p.query.tab;
       const d = st.day, t = today(), isToday = d === t;
       const from7 = addDays(d, -6);
       const [prof, plans, logs, tasks] = await Promise.all([single('profiles'), list('day_plans', { gte: ['on_date', from7], lte: ['on_date', d] }),
@@ -215,8 +320,8 @@ export default {
         ...doneAt.map(x => ({ at: Date.parse(x.done_at), html: `<button class="lnk" data-act="task-open" data-id="${x.id}"><span class="k" style="background:var(--ok);color:#fff">${ic('check', 16)}</span><span class="t">${esc(x.title)}<small>خلصت المهمة · ${fmtTime(hm(x.done_at))}</small></span></button>` }))].sort((a, b) => a.at - b.at);
       return {
         title: 'يومي', sub: isToday ? 'النهاردة · ' + fd(d) : dayName(d) + ' · ' + fd(d), back: '#/today',
-        fab: { label: 'سجّل حاجة', act: 'log-new' },
-        html: `<div class="stack">
+        fab: st.tab === 'now' ? { label: 'سجّل حاجة', act: 'log-new' } : null,
+        html: st.tab === 'now' ? `<div class="stack">${daySeg()}
           <div class="between"><button class="rb" data-act="day-move" data-v="-1" aria-label="اليوم اللي قبله">${ic('back', 20)}</button>
             ${isToday ? `<b class="disp" style="font-size:19px">النهاردة</b>` : `<button class="btn sm" data-act="day-today">ارجع للنهاردة</button>`}
             <button class="rb" data-act="day-move" data-v="1" aria-label="اليوم اللي بعده" ${isToday ? 'disabled style="opacity:.35"' : ''}>${ic('chev', 20)}</button></div>
@@ -239,10 +344,11 @@ export default {
             <div class="row mut" style="gap:6px;font-size:11px;justify-content:space-around">${week.map(x => `<span style="flex:1;text-align:center">${x.tasks ? '✓' + x.tasks : '·'}</span>`).join('')}</div><div class="mut" style="font-size:12px">✓ = مهام خلصت في اليوم</div></div>
           <div class="card" style="padding:8px 14px"><div class="between" style="padding-top:4px"><b style="font-weight:600">عملت إيه ${isToday ? 'النهاردة' : 'اليوم ده'}</b><span class="num mut">${items.length}</span></div>
             <div class="list">${items.map(i => i.html).join('') || `<div class="mut" style="padding:8px 0">${isToday ? 'دوس "ابدأ حاجة" لما تبدأ شغلانة، أو سجّل اللي عملته بإيدك. والمهام اللي بتخلصها بتظهر هنا لوحدها.' : 'متسجلش حاجة في اليوم ده.'}</div>`}</div></div>
-        </div>`,
+        </div>` : st.tab === 'lines' ? await linesView(d, isToday) : await hoursView(),
       };
     },
     actions: {
+      'day-tab'(el) { st.tab = el.dataset.v; doRefresh(); },
       'day-move'(el) { const nx = addDays(st.day, Number(el.dataset.v)); if (nx <= today()) { st.day = nx; doRefresh(); } },
       'day-today'() { st.day = today(); doRefresh(); },
       'start-new': () => startSheet(),
@@ -304,6 +410,8 @@ export default {
 
 // actions الشيتات
 export const insightGlobal = {
+  async 'mood-set'(el) { try { await upsert('day_journal', { on_date: st.day, mood: Number(el.dataset.v) }, 'user_id,on_date'); doRefresh(); } catch (e) { fail(e); } },
+  async 'journal-text'(el) { try { await upsert('day_journal', { on_date: st.day, text: el.value.trim() || null }, 'user_id,on_date'); toast('اتحفظ'); } catch (e) { fail(e); } },
   'start-fill'(el) { const i = sheetEl().querySelector('[name=text]'); i.value = el.dataset.v; },
   async 'start-go'() {
     const s = sheetEl(), f = formOf(s); if (!f.text) return toast('اكتب بتعمل إيه');
@@ -311,7 +419,7 @@ export const insightGlobal = {
     try {
       const now = new Date().toISOString();
       for (const l of (await list('day_logs', { order: 'started_at', asc: false, limit: 10 })).filter(l => !l.ended_at)) await upd('day_logs', l.id, { ended_at: now });
-      await ins('day_logs', { on_date: today(), started_at: now, ended_at: null, text: f.text, kind });
+      await ins('day_logs', { on_date: today(), started_at: now, ended_at: null, text: f.text, kind, ...(f.goal ? { goal_id: f.goal } : {}) });
       st.day = today(); closeSheet(); toast('العداد شغال'); doRefresh();
     } catch (e) { fail(e); }
   },
@@ -330,6 +438,7 @@ export const insightGlobal = {
     if (end != null && end <= start) end += 864e5;   // خلص بعد نص الليل
     if (end == null && !el.dataset.id && date !== today()) return toast('اكتب خلصت الساعة كام');
     const row = { on_date: date, started_at: new Date(start).toISOString(), ended_at: end == null ? (el.dataset.id ? null : new Date(Math.max(start, Date.now())).toISOString()) : new Date(end).toISOString(), text: f.text, kind };
+    if (f.goal !== undefined) row.goal_id = f.goal || null;
     try { if (el.dataset.id) await upd('day_logs', el.dataset.id, row); else await ins('day_logs', row); closeSheet(); doRefresh(); } catch (e) { fail(e); }
   },
   async 'log-del'(el) { closeSheet(); await archiveWithUndo('day_logs', el.dataset.id, 'اتشال من يومك'); },
