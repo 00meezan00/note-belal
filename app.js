@@ -60,13 +60,12 @@ function trackNav(oldHash, newHash) {
 function renderTop(v) {
   curTitle = v.title || '';
   const prev = navStack[navStack.length - 1];
-  const left = prev
-    ? `<button class="rb" data-act="nav-back" aria-label="ارجع لـ ${esc(prev.title)}" style="width:auto;max-width:46%;padding:0 12px 0 10px;gap:4px">${ic('back')}<span style="font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(prev.title)}</span></button>`
-    : v.back
-    ? `<a href="${v.back}" class="rb" aria-label="رجوع">${ic('back')}</a>`
-    : `<button class="rb" data-act="menu" aria-label="القائمة">${ic('menu')}</button>`;
-  $('#top').innerHTML = `${left}<div class="t">${v.sub ? `<div class="s">${esc(v.sub)}</div>` : ''}<h1${(v.title || '').length > 14 ? ' class="long"' : ''}>${esc(v.title || '')}</h1></div>
-    ${v.right || ''}${v.noSearch ? '' : `<a href="#/search" class="rb" aria-label="بحث">${ic('search', 21)}</a>`}`;
+  // زرار القايمة (التلت شرط) دايمًا في مكانه، وزرار الرجوع في الناحية التانية بعيد عنه
+  const back = prev
+    ? `<button class="rb" data-act="nav-back" aria-label="ارجع لـ ${esc(prev.title)}" style="width:auto;max-width:36%;padding:0 10px 0 12px;gap:4px">${ic('back', 18)}<span style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(prev.title)}</span></button>`
+    : v.back ? `<a href="${v.back}" class="rb" aria-label="رجوع">${ic('back')}</a>` : '';
+  $('#top').innerHTML = `<button class="rb" data-act="menu" aria-label="القائمة">${ic('menu')}</button><div class="t">${v.sub ? `<div class="s">${esc(v.sub)}</div>` : ''}<h1${(v.title || '').length > 14 ? ' class="long"' : ''}>${esc(v.title || '')}</h1></div>
+    ${v.right || ''}${v.noSearch ? '' : `<a href="#/search" class="rb" aria-label="بحث">${ic('search', 21)}</a>`}${back}`;
 }
 
 // ---------- التنقل السريع: بنعرض آخر نسخة من الصفحة فورًا، وبنجيب الجديد في الخلفية ----------
