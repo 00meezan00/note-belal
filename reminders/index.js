@@ -165,6 +165,13 @@ async function morningSummary(env, p, open) {
   const todayH = habits.filter(h => h.active !== false && (!Array.isArray(h.days) || !h.days.length || h.days.map(Number).includes(dow)));
   if (todayH.length) L.push(`• عادات النهاردة: ${todayH.map(h => h.title).join('، ')}`);
 
+  // مستني من حد وميعاده جه، وصندوق الوارد
+  const waits = await db(env, `waiting_for?select=who,text,due_on&user_id=eq.${uid}&done=eq.false&archived_at=is.null&due_on=lte.${date}`).catch(() => []);
+  if (waits.length === 1) L.push(`• مستني من ${waits[0].who}: ${waits[0].text}`);
+  else if (waits.length) L.push(`• مستني ${waits.length} حاجات من ناس وميعادها جه (${[...new Set(waits.map(w => w.who))].slice(0, 3).join('، ')})`);
+  const inbox = await db(env, `inbox?select=id&user_id=eq.${uid}&archived_at=is.null`).catch(() => []);
+  if (inbox.length >= 3) L.push(`• في صندوق الوارد ${inbox.length} حاجات مستنية ترتّبها`);
+
   let ideas = [];
   for (const t of ['ideas', 'project_devs']) ideas = ideas.concat(await db(env, `${t}?select=title,remind_time&user_id=eq.${uid}&archived_at=is.null&remind_on=eq.${date}`).catch(() => []));
   if (ideas.length === 1) L.push(`• فكرة هتفكّرك بيها النهاردة: ${ideas[0].title}`);
