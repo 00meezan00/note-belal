@@ -1,6 +1,6 @@
 // الكورسات، الهيكل والنظام، التوظيف، المهام المتكررة
 import { list, one, ins, upd, del, rpc, link } from './db.js';
-import { esc, ic, bat, fd, today, addDays, n, empty, openSheet, closeSheet, sheetEl, formOf, toast, fail, opts, sw } from './ui.js';
+import { esc, ic, bat, fd, today, addDays, daysBetween, n, empty, openSheet, closeSheet, sheetEl, formOf, toast, fail, opts, sw } from './ui.js';
 import { linksSlot, fillLinks, archiveWithUndo, doRefresh } from './comps.js';
 
 const st = { course: 'active', org: 'tree', hire: '' };
@@ -31,6 +31,48 @@ function nextSlot(c) {
   return null;
 }
 const toMin = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+
+// ---------- الحضور: أكّدت إنك أخدت ميعاد الكورس ولا لأ ----------
+// كل ميعاد عدّى بيتسجل في sessions بمفتاح "اليوم الساعة": done = أخدته، skip = مش هعوضه.
+// أي ميعاد يومه خلص ومتسجلش = فاتك، وبنحسب متأخر كام يوم من أقدم ميعاد فاتك.
+// بنبدأ نعدّ من track_from (يوم ما عملت الكورس أو غيّرت مواعيده)، عشان القديم ميتحسبش عليك.
+const daysWord = d => d === 1 ? 'يوم واحد' : d === 2 ? 'يومين' : d <= 10 ? `${d} أيام` : `${d} يوم`;
+const sessWord = k => k === 1 ? 'ميعاد واحد' : k === 2 ? 'ميعادين' : k <= 10 ? `${k} مواعيد` : `${k} ميعاد`;
+function courseLate(c) {
+  const out = { today: null, missed: [], days: 0 };
+  const L = c.schedule || [];
+  if (c.status !== 'active' || !L.length) return out;
+  const S = c.sessions || {}, t0 = today(), now = new Date(), mins = now.getHours() * 60 + now.getMinutes();
+  const end = c.schedule_until && c.schedule_until < t0 ? c.schedule_until : t0;
+  let d = c.track_from || t0;
+  if (d < addDays(t0, -180)) d = addDays(t0, -180);   // آخر 6 شهور بس
+  for (; d <= end; d = addDays(d, 1)) {
+    const dow = new Date(d + 'T12:00').getDay();
+    for (const s of L.filter(x => x.day === dow).sort((a, b) => a.time.localeCompare(b.time))) {
+      const key = `${d} ${s.time}`;
+      if (S[key]) continue;
+      if (d < t0) out.missed.push({ key, d, time: s.time, dow });
+      else if (toMin(s.time) <= mins && !out.today) out.today = { key, time: s.time };
+    }
+  }
+  if (out.missed.length) out.days = daysBetween(out.missed[0].d, t0);
+  return out;
+}
+function lateBox(c, lt) {
+  const b = (m, v, l, cls = '') => `<button class="btn sm ${cls}" data-act="sess" data-id="${c.id}" data-k="${m.key}" data-v="${v}">${l}</button>`;
+  let h = '';
+  if (lt.today) h += `<div class="row" style="gap:8px;padding:10px 12px;border-radius:12px;background:var(--mat)">${ic('book', 18)}<span style="flex:1">ميعاد النهاردة ${fmtTime(lt.today.time)}: أخدته؟</span>${b(lt.today, 'done', `${ic('check', 16)}أخدته`, 'pri')}</div>`;
+  if (lt.missed.length) {
+    const shown = lt.missed.slice(-5).reverse();
+    h += `<div class="stack" style="gap:8px;padding:10px 12px;border-radius:12px;border:1.5px solid var(--bad)">
+      <div class="row" style="gap:6px"><b class="late" style="flex:1">متأخر ${daysWord(lt.days)} على الكورس</b><span class="mut">فاتك ${sessWord(lt.missed.length)}</span></div>
+      ${shown.map(m => `<div class="row" style="gap:6px"><span style="flex:1;font-size:14px;line-height:1.4">${DAYNAME[m.dow]} ${fd(m.d)}<br><small class="mut">${fmtTime(m.time)}</small></span>${b(m, 'done', 'أخدته')}${b(m, 'skip', 'مش هعوضه')}</div>`).join('')}
+      ${lt.missed.length > shown.length ? `<div class="mut" style="font-size:13px">وكمان ${sessWord(lt.missed.length - shown.length)} أقدم</div>` : ''}
+      ${lt.missed.length > 1 ? `<button class="btn sm" data-act="sess-all" data-id="${c.id}">${ic('check', 16)}أخدتهم كلهم</button>` : ''}
+    </div>`;
+  }
+  return h;
+}
 const slotRow = (s = {}) => `<div class="row" data-slot style="gap:6px">
   <select class="inp" data-k="day" style="flex:1.2">${opts(WEEK.map(d => [d, DAYNAME[d]]), s.day ?? 6)}</select>
   <input class="inp" type="time" data-k="time" value="${s.time || '20:00'}" style="flex:1">
@@ -133,23 +175,38 @@ export default {
   courses: {
     async render() {
       const all = await list('courses', { order: 'created_at', asc: false });
-      const L = all.filter(c => c.status === st.course);
+      const LT = Object.fromEntries(all.map(c => [c.id, courseLate(c)]));
+      const L = all.filter(c => c.status === st.course).sort((a, b) => LT[b.id].days - LT[a.id].days);   // المتأخر الأول
+      const lateN = all.filter(c => LT[c.id].missed.length).length;
       return {
-        title: 'الكورسات', sub: `${all.filter(c => c.status === 'active').length} شغال فيهم · ${all.filter(c => c.status === 'done').length} خلصوا`, back: '#/today',
+        title: 'الكورسات', sub: `${all.filter(c => c.status === 'active').length} شغال فيهم · ${all.filter(c => c.status === 'done').length} خلصوا${lateN ? ` · ${lateN} متأخر` : ''}`, back: '#/today',
         fab: { label: 'كورس', act: 'course-new' },
         html: `<div class="stack"><div class="seg">${CSTAT.map(([k, l]) => `<button class="${st.course === k ? 'on' : ''}" data-act="ctab" data-v="${k}">${l} <span class="num">${all.filter(c => c.status === k).length}</span></button>`).join('')}</div>
           ${L.length ? L.map(c => { const p = c.lessons_total ? c.lessons_done / c.lessons_total * 100 : (c.status === 'done' ? 100 : 0);
             const nx = nextSlot(c);
-            return `<button class="card stack" style="gap:8px" data-act="course-open" data-id="${c.id}"><div class="between"><span class="title">${esc(c.title)}</span><span class="mut">${c.lessons_total ? `${c.lessons_done} من ${c.lessons_total} دروس` : ''}</span></div>
+            const lt = LT[c.id];
+            return `<div class="card stack" style="gap:10px${lt.missed.length ? ';border-color:var(--bad)' : ''}"><div class="stack" style="gap:8px;cursor:pointer" data-act="course-open" data-id="${c.id}" role="button" tabindex="0"><div class="between"><span class="title">${esc(c.title)}</span><span class="mut">${c.lessons_total ? `${c.lessons_done} من ${c.lessons_total} دروس` : ''}</span></div>
               ${nx ? `<div class="row" style="gap:6px;font-size:14px">${ic('bell', 16)}<span>الجاي: <b>${nx.text}</b></span>${nx.d === 0 ? '<span class="tag amb">النهاردة</span>' : ''}</div>` : ''}
               ${c.status === 'active' && (c.schedule || []).length ? `<div class="mut">${slotsText(c.schedule)}</div>` : ''}
               ${c.status !== 'wishlist' ? bat(p, c.status === 'done' ? 'done' : 'run') : ''}
               ${c.learned ? `<div class="mut" style="line-height:1.6">اتعلمت: <span style="color:var(--ink)">${esc(c.learned)}</span></div>` : ''}
-              ${c.applied_in ? `<span class="chip" style="align-self:flex-start">${ic('link', 13)}طبقته في: ${esc(c.applied_in)}</span>` : (c.status === 'done' ? '<span class="late" style="font-size:13px">لسه ما اتطبقش في الشغل</span>' : '')}</button>`; }).join('')
+              ${c.applied_in ? `<span class="chip" style="align-self:flex-start">${ic('link', 13)}طبقته في: ${esc(c.applied_in)}</span>` : (c.status === 'done' ? '<span class="late" style="font-size:13px">لسه ما اتطبقش في الشغل</span>' : '')}</div>${lateBox(c, lt)}</div>`; }).join('')
             : empty(st.course === 'active' ? 'سجّل الكورسات اللي بتاخدها، ومواعيدها، وكام درس خلصت، وطبقت إيه منها.' : 'مفيش حاجة هنا لسه.')}</div>`,
       };
     },
-    actions: { ctab(el) { st.course = el.dataset.v; doRefresh(); }, 'course-new': () => courseSheet(), async 'course-open'(el) { courseSheet(await one('courses', el.dataset.id)); } },
+    actions: {
+      ctab(el) { st.course = el.dataset.v; doRefresh(); }, 'course-new': () => courseSheet(), async 'course-open'(el) { courseSheet(await one('courses', el.dataset.id)); },
+      // أخدته / مش هعوضه لميعاد واحد
+      async sess(el) {
+        const c = await one('courses', el.dataset.id); if (!c) return;
+        try { await upd('courses', c.id, { sessions: { ...(c.sessions || {}), [el.dataset.k]: el.dataset.v } }); toast(el.dataset.v === 'done' ? 'اتسجل إنك أخدته' : 'تمام، مش هيتحسب عليك'); doRefresh(); } catch (e) { fail(e); }
+      },
+      async 'sess-all'(el) {
+        const c = await one('courses', el.dataset.id); if (!c) return;
+        const S = { ...(c.sessions || {}) }; for (const m of courseLate(c).missed) S[m.key] = 'done';
+        try { await upd('courses', c.id, { sessions: S }); toast('اتسجلوا كلهم'); doRefresh(); } catch (e) { fail(e); }
+      },
+    },
   },
 
   structure: {
@@ -232,7 +289,12 @@ export const moreGlobal = {
     const row = { title: f.title, status, lessons_total: tot, lessons_done: done, learned: f.learned || null, applied_in: f.applied_in || null,
       schedule, remind_before: Number(picked('before') ?? 15), schedule_until: f.schedule_until || null };
     try {
-      if (el.dataset.id) await upd('courses', el.dataset.id, row); else await ins('courses', row);
+      // بنبدأ نعدّ الحضور من النهاردة: لكورس جديد، أو لو غيّرت المواعيد (عشان الأيام اللي فاتت بالمواعيد الجديدة متتحسبش عليك)
+      if (el.dataset.id) {
+        const old = await one('courses', el.dataset.id);
+        if (!old?.track_from || JSON.stringify(old.schedule || []) !== JSON.stringify(schedule)) row.track_from = today();
+        await upd('courses', el.dataset.id, row);
+      } else await ins('courses', { ...row, track_from: today() });
       closeSheet(); if (schedule.length && status === 'active' && !(tot && done >= tot)) toast(`هفكّرك قبل كل ميعاد (${schedule.length} ${schedule.length === 1 ? 'ميعاد' : schedule.length === 2 ? 'ميعادين' : 'مواعيد'} في الأسبوع)`);
       doRefresh();
     } catch (e) { fail(e); }
