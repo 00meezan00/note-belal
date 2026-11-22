@@ -8,6 +8,7 @@ import { lifeData, taPicker, taRow, taValue, taLabel, taOptions, inTA } from './
 import { goalWizard, smartCheck, missingTag, wizGlobal } from './goalwiz.js';
 import { courseLate } from './more.js';
 import { habitStats } from './habits.js';
+import { withMentions } from './mentions.js';
 
 const STAGES = [['raw', 'خام'], ['developing', 'بتتطور'], ['ready', 'جاهزة']];
 // فكرة نايمة: بقالها 30 يوم أو أكتر محدش لمسها (لا اتعدلت ولا اتغيرت مرحلتها). بيرجع عدد الأيام، أو 0 لو صاحية
@@ -50,7 +51,7 @@ async function servedCard(g) {
 
 async function ideaSheet() {
   const d = await lifeData();
-  openSheet('فكرة جديدة', `<label class="field"><span>الفكرة</span><input name="title" autofocus placeholder="اكتبها زي ما هي، هتوسعها بعدين"></label>
+  openSheet('فكرة جديدة', `<label class="field"><span>الفكرة</span><input name="title" autofocus placeholder="اكتبها زي ما هي (@ لشخص، # لمجال)" data-mention></label>
     ${taPicker(d, '', { label: 'المسار والمجال (اختياري)' })}
     ${remindField()}
     <button class="btn pri" data-act="idea-create">حفظ</button>`);
@@ -228,6 +229,6 @@ export const goalGlobal = {
   async 'idea-create'() {
     const f = formOf(sheetEl()); if (!f.title) return toast('اكتب الفكرة');
     const r = readRemind();
-    try { await ins('ideas', { title: f.title, ...taRow(f.ta, await lifeData(), 'area'), ...r }); closeSheet(); toast(r.remind_on ? 'اتحفظت، وهيوصلك تذكير' : 'اتحفظت'); doRefresh(); } catch (e) { fail(e); }
+    try { await withMentions('ideas', 'idea', await ins('ideas', { title: f.title, ...taRow(f.ta, await lifeData(), 'area'), ...r }), f.title, 'area'); closeSheet(); toast(r.remind_on ? 'اتحفظت، وهيوصلك تذكير' : 'اتحفظت'); doRefresh(); } catch (e) { fail(e); }
   },
 };

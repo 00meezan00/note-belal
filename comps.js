@@ -1,14 +1,15 @@
 // مكونات مشتركة بين الشاشات: المهام، الخطوات، الربط، التسجيل السريع
 import { list, ins, upd, del, archive, unarchive, linksOf, link, rpc, single } from './db.js';
 import { esc, ic, fd, today, addDays, dueText, empty, openSheet, closeSheet, sheetEl, formOf, toast, fail, dictate, opts, sw, n, IOS, micUsed } from './ui.js';
+import { withMentions } from './mentions.js';
 
 // ترتيب المجالات الافتراضي (الليستة الحقيقية بقت في "حياتي" وبتزوّد عليها من هناك)
 export const AREAS = ['المبيعات والمحلات','التسويق','خدمة العملاء','خدمة ما بعد البيع والإرجاع','المحاسبة','الموردين وقطع الغيار','التسعير والصفقات','الموارد البشرية','الهيكل والنظام','متابعة الفنيين','التوسع'];
 export const KIND = { task: ['مهمة','cal'], goal: ['هدف','goal'], idea: ['فكرة','spark'], problem: ['مشكلة','alert'], member: ['فرد','user'],
   project: ['مشروع','layers'], project_dev: ['تطوير في مشروع','layers'], course: ['كورس','book'], sop: ['إجراء','doc'], position: ['وظيفة','user'],
-  candidate: ['متقدم','user'], metric: ['مؤشر','co'], habit: ['عادة','repeat'] };
+  candidate: ['متقدم','user'], metric: ['مؤشر','co'], habit: ['عادة','repeat'], area: ['مجال','star'] };
 export const hrefOf = (type, id) => ({ goal: `#/goal/${id}`, idea: `#/idea/${id}`, member: `#/member/${id}`, problem: `#/problems?open=${id}`,
-  metric: '#/company', project: `#/project/${id}`, project_dev: `#/dev/${id}`, course: '#/courses', sop: '#/structure', position: '#/hiring', candidate: '#/hiring', habit: '#/habits' }[type]);
+  metric: '#/company', project: `#/project/${id}`, project_dev: `#/dev/${id}`, course: '#/courses', sop: '#/structure', position: '#/hiring', candidate: '#/hiring', habit: '#/habits', area: '#/life' }[type]);
 
 let refresh = () => {};
 export const setRefresh = fn => (refresh = fn);
@@ -36,7 +37,7 @@ export async function openTask(id, defaults = {}) {
   const links = id ? await linksOf('task', id) : [];
   const day = t.due_on === today() ? 'today' : t.due_on === addDays(today(), 1) ? 'tomorrow' : 'date';
   openSheet(id ? 'مهمة' : 'مهمة جديدة', `
-    <label class="field"><span>المهمة</span><input name="title" value="${esc(t.title)}" autofocus placeholder="مثلًا: متابعة تحصيل المحلات"></label>
+    <label class="field"><span>المهمة</span><input name="title" value="${esc(t.title)}" autofocus placeholder="مثلًا: متابعة تحصيل المحلات · اكتب @ لشخص أو # لمجال" data-mention></label>
     <div class="field"><span>إمتى</span>
       <div class="pills" data-group="day">
         <button type="button" data-v="today" class="${day === 'today' ? 'on' : ''}" data-act="pick">النهاردة</button>
@@ -67,11 +68,12 @@ export const taskActions = {
     if (!f.title) return toast('اكتب المهمة');
     const row = { title: f.title, due_on: f.due_on || today(), reminder_time: f.reminder_time || null };
     try {
-      if (el.dataset.id) await upd('tasks', el.dataset.id, row);
+      if (el.dataset.id) await withMentions('tasks', 'task', await upd('tasks', el.dataset.id, row), row.title);
       else {
         const t = await ins('tasks', row);
         const d = sheetEl()._defaults || {};
         if (d._link) await link('task', t.id, d._link.type, d._link.id);
+        await withMentions('tasks', 'task', t, row.title);
       }
       closeSheet(); refresh();
     } catch (e) { fail(e); }
@@ -245,18 +247,21 @@ export async function openCapture() {
   openSheet('سجّل بسرعة', `
     <button class="mic-big" data-act="cap-mic" aria-label="${canVoice ? 'اتكلم' : 'اكتب بصوتك من الكيبورد'}">${ic('mic', 42)}</button>
     <div class="mut" style="text-align:center;margin-top:-4px" id="cap-hint">${canVoice ? 'دوس واتكلم. قول مثلًا: أكلت بـ 300 جنيه' : 'اكتب، أو دوس مايك الكيبورد واتكلم'}</div>
-    <textarea class="inp" name="text" rows="3" placeholder="اكتب أو اتكلم…" style="font-size:17px;line-height:1.7" data-input="cap-text"></textarea>
+    <textarea class="inp" name="text" rows="3" placeholder="اكتب أو اتكلم… (@ لشخص، # لمجال)" style="font-size:17px;line-height:1.7" data-input="cap-text" data-mention></textarea>
     <div class="card" id="cap-got" hidden style="padding:10px 14px;background:var(--amb-soft);border-color:var(--amb)"></div>
     <div><div style="font-size:14px;font-weight:600;margin-bottom:8px">تتسجل كـ</div>
       <div class="types" data-group="ctype">
-        ${[['task','مهمة'],['idea','فكرة'],['problem','مشكلة'],['note','رأي في فرد'],['expense','مصروف'],['income','دخل']].map(([v, l], i) => `<button type="button" data-v="${v}" class="${i === 0 ? 'on' : ''}" data-act="cap-type">${l}</button>`).join('')}
+        ${[['inbox','مش عارف لسه'],['task','مهمة'],['idea','فكرة'],['problem','مشكلة'],['wait','مستني من حد'],['note','رأي في فرد'],['expense','مصروف'],['income','دخل']].map(([v, l], i) => `<button type="button" data-v="${v}" class="${i === 0 ? 'on' : ''}" data-act="cap-type">${l}</button>`).join('')}
       </div></div>
+    <div data-extra="inbox"><p class="mut" style="margin:0;font-size:13px">هيروح صندوق الوارد، وترتّبه في المراجعة الأسبوعية.</p></div>
+    <div data-extra="wait" hidden class="grid2"><label class="field"><span>من مين؟</span><input name="who" list="cap-who" placeholder="اسم أو محل"><datalist id="cap-who">${members.map(m => `<option value="${esc(m.name)}">`).join('')}</datalist></label><label class="field"><span>لحد إمتى؟</span><input type="date" name="wait_due" value="${addDays(today(), 3)}"></label></div>
     <div data-extra="note" hidden><label class="field"><span>عن مين؟</span><select name="member">${opts(members.map(m => [m.id, m.name]))}</select></label></div>
     <div data-extra="expense" hidden class="grid2"><label class="field"><span>المبلغ</span><input name="amount" inputmode="decimal" placeholder="150"></label><label class="field"><span>البند</span><select name="cat"><option value="">من غير بند</option>${opts(cats.map(c => [c.id, c.name]))}</select></label></div>
     <div data-extra="income" hidden><label class="field"><span>المبلغ</span><input name="in_amount" inputmode="decimal" placeholder="2500"></label></div>
     <button class="btn amb" data-act="cap-save">حفظ</button>`);
-  sheetEl()._cats = cats;
+  sheetEl()._cats = cats; sheetEl()._members = members;
 }
+const members0 = s => s._members || [];
 // بنفتح الكيبورد ونقولك تدوس المايك بتاعه. الكلام بيتكتب في الخانة، والتطبيق بيفهم المبلغ والبند لوحده
 function useKeyboard(ta) {
   const h = document.getElementById('cap-hint');
@@ -327,9 +332,15 @@ export const captureActions = {
     const type = s.querySelector('[data-group=ctype] .on').dataset.v;
     const text = f.text; const src = 'voice';
     try {
-      if (type === 'task') { if (!text) return toast('اكتب المهمة'); await ins('tasks', { title: text, source: 'manual' }); toast('اتسجلت في مهام النهاردة'); }
-      if (type === 'idea') { if (!text) return toast('اكتب الفكرة'); await ins('ideas', { title: text.split('\n')[0].slice(0, 120), body: text.length > 120 ? text : null, source: src }); toast('اتسجلت في الأفكار'); }
-      if (type === 'problem') { if (!text) return toast('اكتب المشكلة'); await ins('problems', { title: text }); toast('اتسجلت في سجل المشاكل'); }
+      if (type === 'inbox') { if (!text) return toast('اكتب أو اتكلم الأول'); await ins('inbox', { text }); toast('اتحطت في صندوق الوارد'); }
+      if (type === 'wait') {
+        if (!text) return toast('اكتب مستني إيه'); if (!f.who) return toast('اكتب من مين');
+        const m = members0(s).find(x => x.name.trim() === f.who.trim());
+        await ins('waiting_for', { who: f.who, member_id: m?.id || null, text, due_on: f.wait_due || null }); toast(`اتسجل. هفكّرك لو موصلتش${f.wait_due ? ' يوم ' + fd(f.wait_due) : ''}`);
+      }
+      if (type === 'task') { if (!text) return toast('اكتب المهمة'); await withMentions('tasks', 'task', await ins('tasks', { title: text, source: 'manual' }), text); toast('اتسجلت في مهام النهاردة'); }
+      if (type === 'idea') { if (!text) return toast('اكتب الفكرة'); await withMentions('ideas', 'idea', await ins('ideas', { title: text.split('\n')[0].slice(0, 120), body: text.length > 120 ? text : null, source: src }), text, 'area'); toast('اتسجلت في الأفكار'); }
+      if (type === 'problem') { if (!text) return toast('اكتب المشكلة'); await withMentions('problems', 'problem', await ins('problems', { title: text }), text, 'category'); toast('اتسجلت في سجل المشاكل'); }
       if (type === 'note') { if (!text || !f.member) return toast('اكتب رأيك واختار الفرد'); await ins('member_notes', { member_id: f.member, text }); toast('رأيك اتسجل'); }
       if (type === 'expense' || type === 'income') {
         const m = parseMoney(text, s._cats || []);

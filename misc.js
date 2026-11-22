@@ -5,6 +5,7 @@ const VAPID_PUBLIC_KEY = CFG.VAPID_PUBLIC_KEY || '', WORKER_URL = CFG.WORKER_URL
 import { esc, ic, fd, today, empty, openSheet, closeSheet, sheetEl, formOf, toast, fail, opts, sw } from './ui.js';
 import { KIND, hrefOf, linksSlot, fillLinks, archiveWithUndo, doRefresh, openTask } from './comps.js';
 import { lifeData, taPicker, taRow, taValue, trackByName } from './life.js';
+import { withMentions } from './mentions.js';
 
 const ps = { tab: 'open', cat: '' };
 const PSTAT = { open: ['مفتوحة', 'amb'], solving: ['بتتحل', ''], solved: ['اتحلت', 'ok'] };
@@ -12,7 +13,7 @@ const PSTAT = { open: ['مفتوحة', 'amb'], solving: ['بتتحل', ''], solv
 async function problemSheet(p = {}) {
   const d = await lifeData(), fix = d.tracks.find(t => /fix/i.test(t.name));
   openSheet(p.id ? 'المشكلة' : 'مشكلة جديدة', `
-    <label class="field"><span>المشكلة</span><input name="title" value="${esc(p.title)}" autofocus></label>
+    <label class="field"><span>المشكلة</span><input name="title" value="${esc(p.title)}" autofocus placeholder="@ لشخص، # لمجال" data-mention></label>
     ${taPicker(d, p.id ? taValue(p) : fix ? 't:' + fix.id : '', { label: 'المجال' })}
     <label class="field"><span>الحالة</span><select name="status">${opts(Object.entries(PSTAT).map(([k, v]) => [k, v[0]]), p.status || 'open')}</select></label>
     <label class="field"><span>السبب</span><textarea name="cause" rows="2">${esc(p.cause)}</textarea></label>
@@ -57,7 +58,7 @@ export default {
       async 'prob-save'(el) {
         const f = formOf(sheetEl()); if (!f.title) return toast('اكتب المشكلة');
         const row = { title: f.title, ...taRow(f.ta, await lifeData(), 'category'), status: f.status, cause: f.cause || null, solution: f.solution || null, solved_on: f.status === 'solved' ? today() : null };
-        try { if (el.dataset.id) await upd('problems', el.dataset.id, row); else await ins('problems', row); closeSheet(); doRefresh(); } catch (e) { fail(e); }
+        try { const x = el.dataset.id ? await upd('problems', el.dataset.id, row) : await ins('problems', row); await withMentions('problems', 'problem', x, f.title, 'category'); closeSheet(); doRefresh(); } catch (e) { fail(e); }
       },
       async 'prob-again'(el) { const x = await one('problems', el.dataset.id); try { await upd('problems', x.id, { occurrences: x.occurrences + 1, status: x.status === 'solved' ? 'open' : x.status }); problemSheet(await one('problems', x.id)); doRefresh(); } catch (e) { fail(e); } },
       async 'prob-task'(el) { const x = await one('problems', el.dataset.id); openTask(null, { title: 'حل: ' + x.title, _link: { type: 'problem', id: x.id, title: x.title } }); },
@@ -118,9 +119,7 @@ export default {
             ${row('ملخص الصبح', `<div class="mut" style="font-size:13px">مهامك، والمتأخر، وكورسات النهاردة، والكورسات اللي فاتتك، وتذكيرات الأفكار</div><div class="row" style="gap:6px;margin-top:4px"><input type="time" class="inp" style="width:auto;min-height:36px" value="${(p?.morning_reminder || '08:30').slice(0, 5)}" data-change="pref-time" data-k="morning_reminder">${pushState === 'on' && WORKER_URL ? '<button class="btn sm" data-act="push-test" data-morning="1">ابعته دلوقتي</button>' : ''}</div>`, sw(p?.morning_enabled, 'data-act="pref" data-k="morning_enabled"'))}
             ${row('تذكير بالليل تراجع يومك', `<input type="time" class="inp" style="width:auto;min-height:36px;margin-top:4px" value="${(p?.evening_reminder || '22:00').slice(0, 5)}" data-change="pref-time" data-k="evening_reminder">`, sw(p?.evening_enabled, 'data-act="pref" data-k="evening_enabled"'))}
             <div class="mut" style="padding-top:8px">تذكير كل هدف أو مهمة بيتظبط من جوّاه.${WORKER_URL ? '' : ' الإشعارات هتوصل بعد ما تعمل الـ Worker على Cloudflare.'}</div></div>
-          <div class="card"><b style="font-weight:600">معايير التقييم لكل وظيفة</b><div class="mut">افصل بين المعايير بفاصلة</div>
-            ${crit.map(c => `<label class="field" style="margin-top:10px"><span>${esc(c.role)}</span><input value="${esc(c.criteria.join('، '))}" data-change="crit" data-id="${c.id}"></label>`).join('')}
-            <form class="row" data-act-submit="crit-add" style="margin-top:10px"><input class="inp" name="role" placeholder="وظيفة جديدة"><button class="btn sm">ضيف</button></form></div>
+          <a class="card row" href="#/structure" style="gap:12px">${ic('tree', 22)}<div style="flex:1;line-height:1.5"><div style="font-weight:600">الأقسام والوظايف ومعايير التقييم</div><div class="mut">اتنقلت لـ "الهيكل والنظام" ← الأقسام</div></div>${ic('chev', 18)}</a>
           <div class="card list"><b style="font-weight:600;display:block;padding-bottom:4px">الأمان</b>
             ${row('قفل فلوسي بـ Face ID', 'لو قفلته، فلوسي هتفتح من غير بصمة', sw(p?.money_lock_enabled !== false, 'data-act="pref" data-k="money_lock_enabled"'))}</div>
           <div class="card list"><b style="font-weight:600;display:block;padding-bottom:4px">البيانات</b>

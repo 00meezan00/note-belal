@@ -4,6 +4,8 @@ import { esc, ic, bat, fd, fdLong, today, addDays, dueText, empty, weekStart } f
 import { taskRow, openTask } from './comps.js';
 import { habitsTodayCard } from './habits.js';
 import { missingTag } from './goalwiz.js';
+import { todayWaitingCard } from './people.js';
+import { inboxLine } from './inbox.js';
 
 async function linkLabels(taskIds) {
   if (!taskIds.length) return {};
@@ -47,7 +49,7 @@ export default {
       const near = goals.filter(g => g.due_on && g.due_on <= addDays(t, 14)).slice(0, 3);
       const isThu = new Date().getDay() === 4;
       const segs = Math.min(Math.max(day.length, 1), 12);
-      const habitsCard = await habitsTodayCard().catch(() => '');
+      const [habitsCard, waitCard, ibxLine] = await Promise.all([habitsTodayCard().catch(() => ''), todayWaitingCard().catch(() => ''), inboxLine().catch(() => '')]);
 
       return {
         title: 'النهاردة', sub: fdLong(),
@@ -61,6 +63,8 @@ export default {
           ${top.length ? `<div class="sec">أهم ${top.length === 3 ? '3 حاجات' : 'حاجات'} النهاردة</div><div class="card list" style="padding:4px 14px;border-color:var(--amb);border-width:1.5px">${top.map(x => taskRow(x, { linkLabel: labels[x.id] })).join('')}</div>` : ''}
           <div class="between"><span class="sec">${top.length ? 'باقي المهام' : 'مهام النهاردة'}</span><button class="btn sm" data-act="new-task">${ic('plus', 16)}مهمة</button></div>
           ${rest.length ? `<div class="card list" style="padding:4px 14px">${rest.map(x => taskRow(x, { linkLabel: labels[x.id] })).join('')}</div>` : (top.length ? '' : empty('مفيش مهام النهاردة. دوس المايك تحت وسجّل أول مهمة.<br><span class="mut">علّم على النجمة جنب أهم 3 حاجات عشان يطلعوا فوق.</span>'))}
+          ${ibxLine}
+          ${waitCard}
           ${habitsCard}
           ${pays.length ? `<a class="card row" href="#/money" style="gap:12px">${ic('wallet', 22)}<div style="flex:1;line-height:1.5"><div style="font-weight:600">مواعيد دفع</div><div class="mut">${pays.map(x => `${esc(x.title)} · ${x.on_date === t ? 'النهاردة' : 'بكرة'}`).join('، ')}</div></div>${ic('chev', 18)}</a>` : ''}
           ${near.length ? `<div class="between"><span class="sec">قرّب موعدها</span><a href="#/goals" class="mut" style="font-weight:500">كل الأهداف</a></div>${near.map(g => goalCard(g, P[g.id])).join('')}` : ''}

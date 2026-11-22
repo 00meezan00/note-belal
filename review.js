@@ -3,6 +3,50 @@ import { list, single, ins, upd, upsert } from './db.js';
 import { esc, ic, fd, fMonth, today, addDays, weekStart, monthStart, n, empty, toast, fail, formOf, LOC } from './ui.js';
 import { doRefresh, openTask, archiveWithUndo } from './comps.js';
 import { dormantDays, SLEEP_DAYS } from './goals.js';
+import { courseLate } from './more.js';
+import { habitStats } from './habits.js';
+import { smartCheck } from './goalwiz.js';
+import { lateWaiting, daysAgo } from './people.js';
+import { inboxCard } from './inbox.js';
+import { monthNumbers } from './compare.js';
+
+// "حاجات مستنياك": كل اللي محتاج منك قرار أو متابعة، في كارت واحد، وكل سطر بيوديك للحاجة نفسها
+async function waitingForYou(ws) {
+  const t = today(), ms = monthStart();
+  const [tasks, waits, courses, goals, members, ratings, notes, problems] = await Promise.all([list('tasks'), list('waiting_for'), list('courses'), list('goals', { eq: { status: 'active' } }),
+    list('team_members'), list('member_ratings', { eq: { month: ms } }), list('member_notes'), list('problems')]);
+  const lateT = tasks.filter(x => !x.done && x.due_on < t), lateW = lateWaiting(waits);
+  const lateC = courses.map(c => ({ c, lt: courseLate(c) })).filter(x => x.lt.missed.length);
+  const hb = await habitStats(ws, t);
+  const badG = goals.filter(g => (g.due_on && g.due_on < t) || !smartCheck(g).ok);
+  const team = members.filter(m => m.active && !m.is_owner);
+  const unrated = team.filter(m => !ratings.some(r => r.member_id === m.id && Object.values(r.scores || {}).some(Number)));
+  const quiet = team.filter(m => { const last = notes.filter(x => x.member_id === m.id && !x.month).map(x => x.noted_on).sort().pop(); return !last || daysAgo(last) >= 14; });
+  const oldP = problems.filter(p => p.status !== 'solved' && daysAgo(p.created_at) > 14);
+  const names = (L, k = 'name') => esc(L.slice(0, 3).map(x => x[k]).join('، ') + (L.length > 3 ? '…' : ''));
+  const row = (n, icon, text, sub, href, act = '') => n ? `<${href ? `a href="${href}"` : `button data-act="${act}"`} class="lnk"><span class="k">${ic(icon, 18)}</span><span class="t">${text}<small>${sub}</small></span><b class="num">${n}</b></${href ? 'a' : 'button'}>` : '';
+  const rows = [
+    row(lateT.length, 'cal', 'مهام متأخرة', names(lateT, 'title'), '#/today'),
+    row(lateW.length, 'user', 'مستني من حد وميعاده عدّى', esc(lateW.slice(0, 3).map(w => w.who).join('، ')), '', 'wait-all'),
+    row(lateC.length, 'book', 'كورسات فاتتك', esc(lateC.map(x => `${x.c.title} (${x.lt.days} يوم)`).slice(0, 2).join('، ')), '#/courses'),
+    hb.planned ? row(`${hb.pct}%`, 'repeat', 'التزامك بعاداتك الأسبوع ده', `${hb.done} من ${hb.planned}`, '#/habits') : '',
+    row(badG.length, 'goal', 'أهداف متأخرة أو ناقصة', names(badG, 'title'), '#/goals'),
+    row(unrated.length, 'star', 'لسه ماقيّمتهمش الشهر ده', names(unrated), '#/team'),
+    row(quiet.length, 'review', 'بقالك أسبوعين مكتبتش عنهم', names(quiet), '#/team'),
+    row(oldP.length, 'alert', 'مشاكل مفتوحة بقالها أكتر من أسبوعين', names(oldP, 'title'), '#/problems'),
+  ].filter(Boolean);
+  return `<div class="card" style="padding:10px 14px"><b style="font-weight:600">حاجات مستنياك</b>${rows.length ? `<div class="list">${rows.join('')}</div>` : '<div class="mut" style="padding:8px 0">مفيش حاجة مستنياك. أسبوع نضيف.</div>'}</div>`;
+}
+// الأسبوع ده قصاد اللي فات (نفس عدد الأيام)
+async function weekVsLast(ws) {
+  const t = today(), n = Math.round((Date.parse(t) - Date.parse(ws)) / 864e5), pws = addDays(ws, -7);
+  const [A, B] = await Promise.all([monthNumbers([ws, t]), monthNumbers([pws, addDays(pws, n)])]);
+  const R = [['tasks', 'مهام خلصت'], ['goals', 'أهداف اتحققت'], ['solved', 'مشاكل اتحلت'], ['work', 'ساعات شغل', 'س'], ['habits', 'العادات', '%']].filter(([k]) => A[k] || B[k]);
+  if (!R.length) return '';
+  return `<div class="card" style="padding:10px 14px"><div class="between"><b style="font-weight:600">الأسبوع ده قصاد اللي فات</b><a href="#/compare" class="mut" style="font-size:13px">مقارنة الشهور</a></div>
+    <div class="list">${R.map(([k, l, u = '']) => { const a = A[k], b = B[k], c = a > b ? 'ok' : a < b ? 'bad' : ''; return `<div class="row" style="gap:8px;padding:7px 0"><span style="flex:1">${l}</span><b class="num">${n0(a)}${u}</b><span class="mut num" style="font-size:13px">قصاد ${n0(b)}${u}</span><span class="tag ${c}" style="min-width:22px;text-align:center">${a > b ? '▲' : a < b ? '▼' : '='}</span></div>`; }).join('')}</div></div>`;
+}
+const n0 = v => n(v);
 import { companyProgress, progressReport } from './insights.js';
 
 const st = { month: today().slice(0, 7), day: today(), rep: 'month', from: '', to: '' };
@@ -63,6 +107,7 @@ export default {
         list('goals', { eq: { status: 'done' }, gte: ['done_on', ws] }), list('problems', { eq: { status: 'solved' }, gte: ['solved_on', ws] }),
         list('project_devs', { eq: { stage: 'applied' }, gte: ['applied_on', ws] }), list('weekly_reviews', { lt: ['week_start', ws], order: 'week_start', asc: false, limit: 8 })]);
       const r = rev[0] || { went_well: '', blocked: '', next_top3: [] };
+      const [hub, ibx, wvl] = await Promise.all([waitingForYou(ws), inboxCard(), weekVsLast(ws)]);
       const top = [0, 1, 2].map(i => r.next_top3?.[i] || '');
       const stat = (v, l) => `<div><div class="num" style="font-size:22px">${v}</div><div style="font-size:12px;color:#C9D2D9">${l}</div></div>`;
       return {
@@ -70,6 +115,9 @@ export default {
         html: `<div class="stack" style="padding-bottom:20px">
           <div class="card" style="background:var(--dock);border-color:var(--dock);color:#fff;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px">
             ${stat(`${tasks.filter(x => x.done).length}/${tasks.length}`, 'مهام خلصت')}${stat(goals.length, 'هدف اتحقق')}${stat(probs.length, 'مشاكل اتحلت')}${stat(devs.length, 'تطوير اتطبق في مشاريعي')}</div>
+          ${hub}
+          ${ibx}
+          ${wvl}
           ${sleepy.length ? `<div class="card stack" style="gap:8px"><div class="row" style="gap:6px">${ic('moon', 20)}<b style="font-weight:600;flex:1">أفكار نايمة</b><span class="num mut">${sleepy.length}</span></div>
             <div class="mut" style="font-size:13px">بقالها ${SLEEP_DAYS} يوم أو أكتر محدش لمسها. قرّر: تطوّرها ولا تشيلها؟</div>
             <div class="list">${sleepy.slice(0, 6).map(x => `<div style="padding:8px 0"><a href="${x.t === 'idea' ? '#/idea/' : '#/dev/'}${x.r.id}" style="display:block;line-height:1.4"><b style="font-weight:500">${esc(x.r.title)}</b><br><small class="mut">${esc(x.where)} · نايمة من ${x.d} يوم</small></a>

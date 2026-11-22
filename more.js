@@ -3,8 +3,10 @@ import { list, one, ins, upd, del, rpc, link } from './db.js';
 import { esc, ic, bat, fd, today, addDays, daysBetween, n, empty, openSheet, closeSheet, sheetEl, formOf, toast, fail, opts, sw } from './ui.js';
 import { linksSlot, fillLinks, archiveWithUndo, doRefresh } from './comps.js';
 import { lifeData, taPicker, taRow, taValue, trackByName } from './life.js';
+import { deptData } from './people.js';
+import { tplBody } from './templates.js';
 
-const st = { course: 'active', org: 'tree', hire: '' };
+const st = { course: 'active', org: 'depts', hire: '', rec: 'rec' };
 const CSTAT = [['active', 'شغال فيها'], ['done', 'خلصت'], ['wishlist', 'عايز آخدها']];
 const STAGE = [['applied', 'اتقدم', ''], ['interview', 'مقابلة', 'amb'], ['trial', 'تجربة', ''], ['hired', 'اتعين', 'ok'], ['rejected', 'اترفض', 'out']];
 const DAYS = [[6, 'س'], [0, 'ح'], [1, 'ن'], [2, 'ث'], [3, 'ر'], [4, 'خ'], [5, 'ج']];
@@ -110,6 +112,31 @@ async function courseSheet(c = {}) {
     ${c.id ? linksSlot('course', c.id) : ''}
     <div class="btns">${c.id ? `<button class="btn" data-act="course-archive" data-id="${c.id}">${ic('archive', 18)}أرشيف</button>` : ''}<button class="btn pri" data-act="course-save" data-id="${c.id || ''}">حفظ</button></div>`);
   if (c.id) fillLinks(sheetEl());
+}
+
+// ---------------- الأقسام: كل قسم جواه وظايف، وكل وظيفة ليها معايير تقييم ----------------
+const critList = r => (Array.isArray(r?.criteria) ? r.criteria : []).join('، ');
+function deptsBody(dd, members) {
+  const cnt = role => members.filter(m => m.role === role && !m.is_owner).length;
+  const chip = r => `<button class="lnk" data-act="crole-open" data-id="${r.id}"><span class="t">${esc(r.role)}<small>${esc(critList(r) || 'من غير معايير')}</small></span><span class="num mut">${cnt(r.role) || ''}</span>${ic('chev', 16)}</button>`;
+  const none = dd.roles.filter(r => !dd.D[r.department_id]);
+  return (dd.depts.length ? dd.depts.map(d => { const R = dd.roles.filter(r => r.department_id === d.id), n = R.reduce((s, r) => s + cnt(r.role), 0);
+    return `<div class="card" style="padding:10px 14px"><div class="row" style="gap:8px"><b class="disp" style="font-size:18px;flex:1;cursor:pointer" data-act="dept-open" data-id="${d.id}" role="button" tabindex="0">${esc(d.name)}</b><span class="mut" style="font-size:13px">${n} فرد</span><button class="star" data-act="dept-open" data-id="${d.id}" aria-label="عدّل">${ic('edit', 16)}</button></div>
+      <div class="list">${R.map(chip).join('') || '<div class="mut" style="padding:6px 0;font-size:14px">مفيش وظايف في القسم ده لسه.</div>'}</div>
+      <button class="btn dash sm" style="margin-top:6px" data-act="crole-new" data-dept="${d.id}">+ وظيفة في ${esc(d.name)}</button></div>`; }).join('') : empty('اعمل أقسام الشركة، وجوه كل قسم وظايفه.'))
+    + (none.length ? `<div class="card" style="padding:10px 14px"><b style="font-weight:600">وظايف من غير قسم</b><div class="list">${none.map(chip).join('')}</div></div>` : '')
+    + '<p class="mut" style="margin:0;text-align:center;font-size:13px">دوس على أي وظيفة عشان تغيّر اسمها أو قسمها أو معايير تقييمها.</p>';
+}
+function deptSheet(d = {}) {
+  openSheet(d.id ? 'القسم' : 'قسم جديد', `<label class="field"><span>اسم القسم</span><input name="name" value="${esc(d.name)}" ${d.id ? '' : 'autofocus'} placeholder="مثلًا: الاستلام والتسليم"></label>
+    <div class="btns">${d.id ? `<button class="btn" data-act="dept-del" data-id="${d.id}">${ic('archive', 18)}شيله</button>` : ''}<button class="btn pri" data-act="dept-save" data-id="${d.id || ''}">حفظ</button></div>`);
+}
+function critSheet(dd, r = {}) {
+  openSheet(r.id ? 'الوظيفة' : 'وظيفة جديدة', `<label class="field"><span>اسم الوظيفة</span><input name="role" value="${esc(r.role)}" ${r.id ? '' : 'autofocus'} placeholder="مثلًا: مندوب"></label>
+    <label class="field"><span>القسم</span><select name="department_id"><option value="">من غير قسم</option>${opts(dd.depts.map(d => [d.id, d.name]), r.department_id)}</select></label>
+    <label class="field"><span>معايير التقييم (افصل بينهم بفاصلة)</span><input name="criteria" value="${esc(critList(r) || 'الالتزام')}"></label>
+    ${r.id ? '<p class="mut" style="margin:0;font-size:13px">لو غيّرت الاسم، كل الناس اللي على الوظيفة دي هيتغير اسم وظيفتهم معاها.</p>' : ''}
+    <button class="btn pri" data-act="crole-save" data-id="${r.id || ''}" data-old="${esc(r.role || '')}">حفظ</button>`);
 }
 
 // ---------------- الهيكل ----------------
@@ -229,17 +256,23 @@ export default {
     async render() {
       const [units, sops, roles] = await Promise.all([list('org_units', { order: 'sort' }), list('sops', { order: 'updated_at', asc: false }), list('job_roles', { order: 'title' })]);
       let body;
-      if (st.org === 'tree') body = units.length ? `<div class="card" style="padding:8px 12px">${tree(units)}</div>` : empty('ابدأ بمالك الشركة، وبعدين ضيف المناصب والأقسام تحته.');
+      const dd = await deptData(), members = (await list('team_members')).filter(m => m.active);
+      if (st.org === 'depts') body = deptsBody(dd, members);
+      else if (st.org === 'tree') body = units.length ? `<div class="card" style="padding:8px 12px">${tree(units)}</div>` : empty('ابدأ بمالك الشركة، وبعدين ضيف المناصب والأقسام تحته.');
       else if (st.org === 'sops') body = sops.length ? `<div class="card list" style="padding:4px 14px">${sops.map(s => `<button class="lnk" data-act="sop-open" data-id="${s.id}"><span class="t">${esc(s.title)}<small>نسخة ${s.version} · آخر تعديل ${fd(s.updated_at)}</small></span>${ic('chev', 18)}</button>`).join('')}</div>` : empty('اكتب إجراءات الشغل: استلام جهاز، الإرجاع، التحصيل… واربط كل إجراء بالمشكلة اللي خلّتك تعمله.');
       else body = roles.length ? `<div class="card list" style="padding:4px 14px">${roles.map(r => `<button class="lnk" data-act="role-open" data-id="${r.id}"><span class="t">${esc(r.title)}<small>${esc((r.description || 'من غير وصف').slice(0, 70))}</small></span>${ic('chev', 18)}</button>`).join('')}</div>` : empty('اكتب الوصف الوظيفي لكل وظيفة في الشركة.');
-      const fab = { tree: ['منصب', 'unit-new'], sops: ['إجراء', 'sop-new'], roles: ['وظيفة', 'role-new'] }[st.org];
+      const fab = { depts: ['قسم', 'dept-new'], tree: ['منصب', 'unit-new'], sops: ['إجراء', 'sop-new'], roles: ['وصف وظيفة', 'role-new'] }[st.org];
       return {
         title: 'الهيكل والنظام', back: '#/today', fab: { label: fab[0], act: fab[1] },
-        html: `<div class="stack"><div class="seg">${[['tree', 'الهيكل', units.length], ['sops', 'الإجراءات', sops.length], ['roles', 'الوظايف', roles.length]].map(([k, l, c]) => `<button class="${st.org === k ? 'on' : ''}" data-act="otab" data-v="${k}">${l} <span class="num">${c}</span></button>`).join('')}</div>${body}</div>`,
+        html: `<div class="stack"><div class="seg">${[['depts', 'الأقسام', dd.depts.length], ['tree', 'الهيكل', units.length], ['sops', 'الإجراءات', sops.length], ['roles', 'وصف الوظايف', roles.length]].map(([k, l, c]) => `<button class="${st.org === k ? 'on' : ''}" data-act="otab" data-v="${k}">${l} <span class="num">${c}</span></button>`).join('')}</div>${body}</div>`,
       };
     },
     actions: {
       otab(el) { st.org = el.dataset.v; doRefresh(); },
+      'dept-new': () => deptSheet(),
+      async 'dept-open'(el) { deptSheet((await deptData()).D[el.dataset.id]); },
+      async 'crole-new'(el) { critSheet(await deptData(), { department_id: el.dataset.dept || null }); },
+      async 'crole-open'(el) { const dd = await deptData(); critSheet(dd, dd.roles.find(r => r.id === el.dataset.id)); },
       async 'unit-new'() { unitSheet(await list('org_units', { order: 'sort' })); },
       async 'unit-open'(el) { const units = await list('org_units', { order: 'sort' }); unitSheet(units, units.find(u => u.id === el.dataset.id)); },
       'sop-new': () => sopSheet(), async 'sop-open'(el) { sopSheet(await one('sops', el.dataset.id)); },
@@ -274,20 +307,48 @@ export default {
 
   recurring: {
     async render() {
-      const L = await list('recurring_tasks', { order: 'created_at' });
+      const [L, T] = await Promise.all([list('recurring_tasks', { order: 'created_at' }), list('templates')]);
+      const tpl = st.rec === 'tpl';
       return {
-        title: 'المهام المتكررة', sub: 'بتنزل لوحدها في "النهاردة" في يومها', back: '#/today',
-        fab: { label: 'مهمة متكررة', act: 'rec-new' },
-        html: `<div class="stack">${L.length ? `<div class="card list" style="padding:4px 14px">${L.map(r => `<button class="lnk" data-act="rec-open" data-id="${r.id}" style="${r.active ? '' : 'opacity:.5'}"><span class="k">${ic('repeat', 18)}</span><span class="t">${esc(r.title)}<small>${recText(r)}${r.reminder_time ? ' · ' + r.reminder_time.slice(0, 5) : ''}${r.active ? '' : ' · واقفة'}</small></span>${ic('chev', 18)}</button>`).join('')}</div>` : empty('الحاجات اللي بتتعمل كل يوم أو كل أسبوع أو كل شهر، زي متابعة التحصيل أو مراجعة المرتجعات.')}</div>`,
+        title: 'مهام جاهزة', sub: tpl ? 'لستة مهام بتعملها مرة واحدة بمواعيدها' : 'بتنزل لوحدها في "النهاردة" في يومها', back: '#/today',
+        fab: tpl ? { label: 'قالب', act: 'tpl-new' } : { label: 'مهمة متكررة', act: 'rec-new' },
+        html: `<div class="stack"><div class="seg"><button class="${tpl ? '' : 'on'}" data-act="rtab" data-v="rec">متكررة <span class="num">${L.length}</span></button><button class="${tpl ? 'on' : ''}" data-act="rtab" data-v="tpl">قوالب <span class="num">${T.length}</span></button></div>
+          ${tpl ? await tplBody() : `${L.length ? `<div class="card list" style="padding:4px 14px">${L.map(r => `<button class="lnk" data-act="rec-open" data-id="${r.id}" style="${r.active ? '' : 'opacity:.5'}"><span class="k">${ic('repeat', 18)}</span><span class="t">${esc(r.title)}<small>${recText(r)}${r.reminder_time ? ' · ' + r.reminder_time.slice(0, 5) : ''}${r.active ? '' : ' · واقفة'}</small></span>${ic('chev', 18)}</button>`).join('')}</div>` : empty('الحاجات اللي بتتعمل كل يوم أو كل أسبوع أو كل شهر، زي متابعة التحصيل أو مراجعة المرتجعات.')}`}</div>`,
       };
     },
-    actions: { 'rec-new': () => recSheet(), async 'rec-open'(el) { recSheet(await one('recurring_tasks', el.dataset.id)); } },
+    actions: { rtab(el) { st.rec = el.dataset.v; doRefresh(); }, 'rec-new': () => recSheet(), async 'rec-open'(el) { recSheet(await one('recurring_tasks', el.dataset.id)); } },
   },
 };
 
 // actions الشيتات
 const num = v => v === '' || v == null ? null : Number(v);
 export const moreGlobal = {
+  async 'dept-save'(el) {
+    const f = formOf(sheetEl()); if (!f.name) return toast('اكتب اسم القسم');
+    try { if (el.dataset.id) await upd('departments', el.dataset.id, { name: f.name }); else await ins('departments', { name: f.name, sort: (await list('departments')).length }); closeSheet(); doRefresh(); } catch (e) { fail(e); }
+  },
+  async 'dept-del'(el) {
+    try { for (const r of (await list('role_criteria')).filter(r => r.department_id === el.dataset.id)) await upd('role_criteria', r.id, { department_id: null });
+      await upd('departments', el.dataset.id, { archived_at: new Date().toISOString() }); closeSheet(); toast('القسم اتشال، ووظايفه بقت من غير قسم'); doRefresh(); } catch (e) { fail(e); }
+  },
+  async 'crole-save'(el) {
+    const f = formOf(sheetEl()); if (!f.role) return toast('اكتب اسم الوظيفة');
+    const criteria = f.criteria.split(/[،,]/).map(x => x.trim()).filter(Boolean); if (!criteria.length) criteria.push('الالتزام');
+    const row = { role: f.role, department_id: f.department_id || null, criteria };
+    try {
+      const all = await list('role_criteria');
+      if (all.some(r => r.role === f.role && r.id !== el.dataset.id)) return toast('فيه وظيفة بنفس الاسم');
+      if (el.dataset.id) {
+        await upd('role_criteria', el.dataset.id, row);
+        const old = el.dataset.old;
+        if (old && old !== f.role) {   // الاسم اتغير: الناس والأماكن الفاضية على الوظيفة دي بيتغيروا معاها
+          for (const m of (await list('team_members')).filter(m => m.role === old)) await upd('team_members', m.id, { role: f.role });
+          for (const p of (await list('positions')).filter(p => p.role === old)) await upd('positions', p.id, { role: f.role });
+        }
+      } else await ins('role_criteria', row);
+      closeSheet(); doRefresh();
+    } catch (e) { fail(e); }
+  },
   'lesson-plus'() { const i = sheetEl().querySelector('[name=lessons_done]'); i.value = (parseInt(i.value) || 0) + 1; },
   'slot-add'() {
     const box = sheetEl().querySelector('#slots');
