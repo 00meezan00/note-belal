@@ -2,6 +2,7 @@
 import { list, one, ins, upd, del } from './db.js';
 import { esc, ic, bat, fd, today, addDays, iso, n, empty, openSheet, closeSheet, sheetEl, formOf, toast, fail, opts } from './ui.js';
 import { stepsBlock, linksSlot, archiveWithUndo, doRefresh, openTask } from './comps.js';
+import { lifeData, taPicker, taRow, taValue, trackByName } from './life.js';
 import { remindField, readRemind, remindCard, remindActions, remindChip } from './remind.js';
 
 export const PKIND = { system: 'سيستم', app: 'تطبيق', program: 'برنامج', game: 'لعبة', other: 'حاجة تانية' };
@@ -45,12 +46,14 @@ function pipe(devs) {
   return `<div class="row" style="gap:6px">${DSTAGE.map(([k, l]) => `<div style="flex:1;border-radius:10px;padding:6px 4px;text-align:center;${cols[k]}"><div class="num" style="font-size:17px;line-height:1.2">${devs.filter(d => d.stage === k).length}</div><div style="font-size:11px">${l}</div></div>`).join('')}</div>`;
 }
 
-function projectSheet(p = {}) {
+async function projectSheet(p = {}) {
+  const d = await lifeData(), side = trackByName(d, 'شغلي الخاص');
   openSheet(p.id ? 'تعديل المشروع' : 'مشروع جديد', `
     <label class="field"><span>الاسم</span><input name="name" value="${esc(p.name)}" autofocus placeholder="مثلًا: سيستم مبيعات ومخزن للمحلات"></label>
     <div class="grid2"><label class="field"><span>النوع</span><select name="kind">${opts(Object.entries(PKIND), p.kind || 'system')}</select></label>
     <label class="field"><span>لمين؟</span><input name="audience" value="${esc(p.audience)}" placeholder="للمحلات، للشركات…"></label></div>
     <label class="row card" style="padding:12px 14px"><input type="checkbox" name="is_personal" ${p.is_personal ? 'checked' : ''} style="width:22px;height:22px"><span style="flex:1">مشروع شخصي ليا أنا (من غير عملاء)</span></label>
+    ${taPicker(d, p.id ? taValue(p) : side ? 't:' + side.id : '')}
     <label class="field"><span>بدأته إمتى</span><input type="date" name="started_on" value="${p.started_on || ''}"></label>
     <label class="field"><span>وصف مختصر</span><textarea name="description" rows="3">${esc(p.description)}</textarea></label>
     <button class="btn pri" data-act="proj-save" data-id="${p.id || ''}">حفظ</button>`);
@@ -264,7 +267,7 @@ export default {
 export const projectGlobal = {
   async 'proj-save'(el) {
     const f = formOf(sheetEl()); if (!f.name) return toast('اكتب اسم المشروع');
-    const row = { name: f.name, kind: f.kind, audience: f.audience || null, is_personal: !!f.is_personal, started_on: f.started_on || null, description: f.description || null };
+    const row = { name: f.name, kind: f.kind, audience: f.audience || null, is_personal: !!f.is_personal, started_on: f.started_on || null, description: f.description || null, ...taRow(f.ta, await lifeData()) };
     try {
       if (el.dataset.id) { await upd('projects', el.dataset.id, row); closeSheet(); doRefresh(); }
       else { const p = await ins('projects', row); closeSheet(); location.hash = `#/project/${p.id}`; }

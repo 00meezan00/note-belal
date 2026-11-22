@@ -2,6 +2,7 @@
 import { list, one, ins, upd, del, rpc, link } from './db.js';
 import { esc, ic, bat, fd, today, addDays, daysBetween, n, empty, openSheet, closeSheet, sheetEl, formOf, toast, fail, opts, sw } from './ui.js';
 import { linksSlot, fillLinks, archiveWithUndo, doRefresh } from './comps.js';
+import { lifeData, taPicker, taRow, taValue, trackByName } from './life.js';
 
 const st = { course: 'active', org: 'tree', hire: '' };
 const CSTAT = [['active', 'شغال فيها'], ['done', 'خلصت'], ['wishlist', 'عايز آخدها']];
@@ -13,6 +14,7 @@ const picked = group => sheetEl().querySelector(`[data-group=${group}] .on`)?.da
 
 // ---------------- الكورسات ----------------
 // مواعيد الكورس: كل ميعاد = يوم في الأسبوع + ساعة. وCloudflare بيبعتلك إشعار قبل كل ميعاد
+const SLEN = [[30, 'نص ساعة'], [60, 'ساعة'], [90, 'ساعة ونص'], [120, 'ساعتين']];   // مدة الميعاد، عشان يتسجل في "يومي" صح
 const BEFORE = [[0, 'في الميعاد'], [15, 'قبلها بربع ساعة'], [30, 'قبلها بنص ساعة'], [60, 'قبلها بساعة']];
 const WEEK = [6, 0, 1, 2, 3, 4, 5];   // الأسبوع بيبدأ السبت
 const fmtTime = t => { const [h, m] = t.split(':').map(Number); return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'ص' : 'م'}`; };
@@ -38,7 +40,7 @@ const toMin = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m;
 // بنبدأ نعدّ من track_from (يوم ما عملت الكورس أو غيّرت مواعيده)، عشان القديم ميتحسبش عليك.
 const daysWord = d => d === 1 ? 'يوم واحد' : d === 2 ? 'يومين' : d <= 10 ? `${d} أيام` : `${d} يوم`;
 const sessWord = k => k === 1 ? 'ميعاد واحد' : k === 2 ? 'ميعادين' : k <= 10 ? `${k} مواعيد` : `${k} ميعاد`;
-function courseLate(c) {
+export function courseLate(c) {
   const out = { today: null, missed: [], days: 0 };
   const L = c.schedule || [];
   if (c.status !== 'active' || !L.length) return out;
@@ -57,6 +59,14 @@ function courseLate(c) {
   }
   if (out.missed.length) out.days = daysBetween(out.missed[0].d, t0);
   return out;
+}
+// لما تأكد إنك أخدت ميعاد: بيتسجل في "يومي" كوقت كورسات، من ساعة الميعاد لحد ما يخلص (لو مش متسجل قبل كده)
+async function logCourse(c, key) {
+  const [d, t] = key.split(' ');
+  const start = new Date(`${d}T${t}`), mins = Number(c.session_minutes) || 60, text = `كورس: ${c.title}`;
+  const same = await list('day_logs', { eq: { on_date: d, text } });
+  if (same.some(l => l.started_at && Math.abs(Date.parse(l.started_at) - start) < 6e4)) return;
+  await ins('day_logs', { on_date: d, started_at: start.toISOString(), ended_at: new Date(+start + mins * 6e4).toISOString(), text, kind: 'course' });
 }
 function lateBox(c, lt) {
   const b = (m, v, l, cls = '') => `<button class="btn sm ${cls}" data-act="sess" data-id="${c.id}" data-k="${m.key}" data-v="${v}">${l}</button>`;
@@ -78,15 +88,17 @@ const slotRow = (s = {}) => `<div class="row" data-slot style="gap:6px">
   <input class="inp" type="time" data-k="time" value="${s.time || '20:00'}" style="flex:1">
   <button type="button" class="star" data-act="slot-del" aria-label="شيل الميعاد">${ic('x', 18)}</button></div>`;
 
-function courseSheet(c = {}) {
-  const slots = sortSlots(c.schedule || []);
+async function courseSheet(c = {}) {
+  const slots = sortSlots(c.schedule || []), d = await lifeData(), dev = trackByName(d, 'تطويري');
   openSheet(c.id ? 'الكورس' : 'كورس جديد', `
     <label class="field"><span>اسم الكورس</span><input name="title" value="${esc(c.title)}" ${c.id ? '' : 'autofocus'} placeholder="مثلًا: الإدارة المالية"></label>
     <div class="field"><span>الحالة</span>${pills('cstat', CSTAT, c.status || 'active')}</div>
+    ${taPicker(d, c.id ? taValue(c) : dev ? 't:' + dev.id : '')}
     <div class="card stack" style="gap:10px;padding:12px 14px">
       <div class="row" style="gap:6px;font-weight:600">${ic('bell', 18)}مواعيد الكورس</div>
       <div class="stack" style="gap:8px" id="slots">${slots.map(slotRow).join('')}</div>
       <button type="button" class="btn dash sm" data-act="slot-add">+ ميعاد (يوم وساعة)</button>
+      <div class="field"><span>الميعاد بياخد قد إيه</span>${pills('slen', SLEN, c.session_minutes ?? 60)}</div>
       <div class="field"><span>ذكّرني</span>${pills('before', BEFORE, c.remind_before ?? 15)}</div>
       <label class="field"><span>المواعيد شغالة لحد (اختياري)</span><input type="date" name="schedule_until" value="${c.schedule_until || ''}"></label>
       <p class="mut" style="margin:0">التذكير بيوصلك إشعار حتى لو التطبيق مقفول، طول ما الكورس "شغال فيه".</p>
@@ -199,12 +211,16 @@ export default {
       // أخدته / مش هعوضه لميعاد واحد
       async sess(el) {
         const c = await one('courses', el.dataset.id); if (!c) return;
-        try { await upd('courses', c.id, { sessions: { ...(c.sessions || {}), [el.dataset.k]: el.dataset.v } }); toast(el.dataset.v === 'done' ? 'اتسجل إنك أخدته' : 'تمام، مش هيتحسب عليك'); doRefresh(); } catch (e) { fail(e); }
+        try {
+          await upd('courses', c.id, { sessions: { ...(c.sessions || {}), [el.dataset.k]: el.dataset.v } });
+          if (el.dataset.v === 'done') await logCourse(c, el.dataset.k);
+          toast(el.dataset.v === 'done' ? 'اتسجل إنك أخدته، ودخل في "يومي"' : 'تمام، مش هيتحسب عليك'); doRefresh();
+        } catch (e) { fail(e); }
       },
       async 'sess-all'(el) {
         const c = await one('courses', el.dataset.id); if (!c) return;
-        const S = { ...(c.sessions || {}) }; for (const m of courseLate(c).missed) S[m.key] = 'done';
-        try { await upd('courses', c.id, { sessions: S }); toast('اتسجلوا كلهم'); doRefresh(); } catch (e) { fail(e); }
+        const missed = courseLate(c).missed, S = { ...(c.sessions || {}) }; for (const m of missed) S[m.key] = 'done';
+        try { await upd('courses', c.id, { sessions: S }); for (const m of missed) await logCourse(c, m.key); toast('اتسجلوا كلهم، ودخلوا في "يومي"'); doRefresh(); } catch (e) { fail(e); }
       },
     },
   },
@@ -287,7 +303,7 @@ export const moreGlobal = {
     const schedule = sortSlots([...s.querySelectorAll('[data-slot]')].map(r => ({ day: Number(r.querySelector('[data-k=day]').value), time: r.querySelector('[data-k=time]').value }))
       .filter(x => x.time && !seen.has(x.day + x.time) && seen.add(x.day + x.time)));
     const row = { title: f.title, status, lessons_total: tot, lessons_done: done, learned: f.learned || null, applied_in: f.applied_in || null,
-      schedule, remind_before: Number(picked('before') ?? 15), schedule_until: f.schedule_until || null };
+      schedule, remind_before: Number(picked('before') ?? 15), schedule_until: f.schedule_until || null, session_minutes: Number(picked('slen') ?? 60), ...taRow(f.ta, await lifeData()) };
     try {
       // بنبدأ نعدّ الحضور من النهاردة: لكورس جديد، أو لو غيّرت المواعيد (عشان الأيام اللي فاتت بالمواعيد الجديدة متتحسبش عليك)
       if (el.dataset.id) {

@@ -2,12 +2,13 @@
 import { list, ins, upd, del, archive, unarchive, linksOf, link, rpc, single } from './db.js';
 import { esc, ic, fd, today, addDays, dueText, empty, openSheet, closeSheet, sheetEl, formOf, toast, fail, dictate, opts, sw, n, IOS, micUsed } from './ui.js';
 
-export const AREAS = ['المبيعات والمحلات','التسويق','خدمة العملاء','خدمة ما بعد البيع والإرجاع','المحاسبة والتحصيل','الموردين وقطع الغيار','التسعير والصفقات','الموارد البشرية','الهيكل والنظام','متابعة الفنيين','التوسع','تطويري الشخصي'];
+// ترتيب المجالات الافتراضي (الليستة الحقيقية بقت في "حياتي" وبتزوّد عليها من هناك)
+export const AREAS = ['المبيعات والمحلات','التسويق','خدمة العملاء','خدمة ما بعد البيع والإرجاع','المحاسبة','الموردين وقطع الغيار','التسعير والصفقات','الموارد البشرية','الهيكل والنظام','متابعة الفنيين','التوسع'];
 export const KIND = { task: ['مهمة','cal'], goal: ['هدف','goal'], idea: ['فكرة','spark'], problem: ['مشكلة','alert'], member: ['فرد','user'],
   project: ['مشروع','layers'], project_dev: ['تطوير في مشروع','layers'], course: ['كورس','book'], sop: ['إجراء','doc'], position: ['وظيفة','user'],
-  candidate: ['متقدم','user'], metric: ['مؤشر','co'] };
+  candidate: ['متقدم','user'], metric: ['مؤشر','co'], habit: ['عادة','repeat'] };
 export const hrefOf = (type, id) => ({ goal: `#/goal/${id}`, idea: `#/idea/${id}`, member: `#/member/${id}`, problem: `#/problems?open=${id}`,
-  metric: '#/company', project: `#/project/${id}`, project_dev: `#/dev/${id}`, course: '#/courses', sop: '#/structure', position: '#/hiring', candidate: '#/hiring' }[type]);
+  metric: '#/company', project: `#/project/${id}`, project_dev: `#/dev/${id}`, course: '#/courses', sop: '#/structure', position: '#/hiring', candidate: '#/hiring', habit: '#/habits' }[type]);
 
 let refresh = () => {};
 export const setRefresh = fn => (refresh = fn);
@@ -117,12 +118,13 @@ export const stepActions = {
 };
 
 // ---------------- كارت "مرتبط بـ" ----------------
-export const linksSlot = (type, id) => `<div data-links="${type}:${id}"><div class="card mut">بيحمّل الحاجات المرتبطة…</div></div>`;
+// skip: أنواع بتتعرض في كارت تاني في نفس الصفحة، فمش بنكررها هنا
+export const linksSlot = (type, id, skip = []) => `<div data-links="${type}:${id}" data-skip="${skip.join(',')}"><div class="card mut">بيحمّل الحاجات المرتبطة…</div></div>`;
 export async function fillLinks(root) {
   for (const slot of root.querySelectorAll('[data-links]')) {
     const [type, id] = slot.dataset.links.split(':');
     try {
-      const items = await linksOf(type, id);
+      const skip = (slot.dataset.skip || '').split(',').filter(Boolean), items = (await linksOf(type, id)).filter(l => !skip.includes(l.type));
       slot.innerHTML = `<div class="card" style="padding:12px 14px"><div class="row" style="gap:6px;font-weight:600">${ic('link', 18)}مرتبط بـ</div>
         <div class="list">${items.map(l => {
           const href = hrefOf(l.type, l.id);

@@ -12,9 +12,12 @@ import money, { moneyGlobal } from './money.js';
 import more, { moreGlobal } from './more.js';
 import review from './review.js';
 import insights, { insightGlobal } from './insights.js';
+import habits, { habitGlobal } from './habits.js';
+import compare from './compare.js';
+import life, { lifeGlobal } from './life.js';
 
-const SCREENS = { ...today, ...goals, ...team, ...company, ...misc, ...projects, ...money, ...more, ...review, ...insights };
-const GLOBAL = { ...goalGlobal, ...teamGlobal, ...projectGlobal, ...moneyGlobal, ...moreGlobal, ...insightGlobal, ...taskActions, ...stepActions, ...linkActions, ...captureActions,
+const SCREENS = { ...today, ...goals, ...team, ...company, ...misc, ...projects, ...money, ...more, ...review, ...insights, ...habits, ...compare, ...life };
+const GLOBAL = { ...goalGlobal, ...teamGlobal, ...projectGlobal, ...moneyGlobal, ...moreGlobal, ...insightGlobal, ...habitGlobal, ...lifeGlobal, ...taskActions, ...stepActions, ...linkActions, ...captureActions,
   'close-sheet': closeSheet, capture: openCapture, menu: openMenu, 'close-menu': closeMenu };
 
 const $ = s => document.querySelector(s);
@@ -164,9 +167,10 @@ function openMenu() {
     : `<a href="${href}">${ic(icon, 21)}<span>${label}</span>${meta ? `<span class="mut">${meta}</span>` : ''}</a>`;
   d.innerHTML = `<div class="back" data-act="close-menu"></div><nav class="panel" aria-label="القائمة">
     <div style="padding:22px 20px 14px;border-bottom:1px dashed var(--line)"><div class="disp" style="font-size:26px">نوتة بلال</div><div class="mut">Fix Team</div></div>
+    <div class="gh">حياتي</div>${item('#/life', 'star', 'حياتي', 'المسارات والمجالات')}${item('#/habits', 'repeat', 'عاداتي')}${item('#/courses', 'book', 'الكورسات')}${item('#/compare', 'chart', 'مقارنة الشهور')}
+    <div class="gh">الشغل</div>${item('#/problems', 'alert', 'سجل المشاكل')}${item('#/structure', 'tree', 'الهيكل والنظام')}${item('#/hiring', 'user', 'التوظيف')}
+    <div class="gh">متابعة</div>${item('#/day', 'clock', 'يومي', 'وقتي ونسبي')}${item('#/weekly', 'review', 'المراجعات الأسبوعية')}${item('#/recurring', 'repeat', 'المهام المتكررة')}${item('#/calendar', 'cal', 'التقويم')}
     <div class="gh">شغلي الخاص</div>${item('#/projects', 'layers', 'مشاريعي')}${item('#/money', 'wallet', 'فلوسي', 'مقفول')}
-    <div class="gh">متابعة</div>${item('#/day', 'clock', 'يومي', 'وقتي ونسبي')}${item('#/problems', 'alert', 'سجل المشاكل')}${item('#/weekly', 'review', 'المراجعات الأسبوعية')}${item('#/recurring', 'repeat', 'المهام المتكررة')}${item('#/calendar', 'cal', 'التقويم')}
-    <div class="gh">تطوير</div>${item('#/courses', 'book', 'الكورسات')}${item('#/structure', 'tree', 'الهيكل والنظام')}${item('#/hiring', 'user', 'التوظيف')}
     <div class="gh">تقارير</div>${item('#/progress', 'chart', 'تقدّم الشركة')}${item('#/report', 'doc', 'تقرير للمالك')}
     <div style="margin-top:auto;border-top:1px dashed var(--line);padding:8px 0 18px">${item('#/archive', 'archive', 'الأرشيف')}${item('#/settings', 'cog', 'الإعدادات')}</div>
   </nav>`;

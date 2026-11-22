@@ -1,7 +1,8 @@
 // المراجعة الأسبوعية، التقويم، التقرير للمالك
-import { list, single, ins, upsert } from './db.js';
+import { list, single, ins, upd, upsert } from './db.js';
 import { esc, ic, fd, fMonth, today, addDays, weekStart, monthStart, n, empty, toast, fail, formOf, LOC } from './ui.js';
-import { doRefresh, openTask } from './comps.js';
+import { doRefresh, openTask, archiveWithUndo } from './comps.js';
+import { dormantDays, SLEEP_DAYS } from './goals.js';
 import { companyProgress, progressReport } from './insights.js';
 
 const st = { month: today().slice(0, 7), day: today(), rep: 'month', from: '', to: '' };
@@ -52,6 +53,11 @@ export default {
   weekly: {
     async render() {
       const ws = weekStart(), we = addDays(ws, 6), t = today();
+      // الأفكار النايمة: عادية وأفكار تطوير في المشاريع، بقالها شهر محدش لمسها
+      const [allIdeas, allDevs, projects] = await Promise.all([list('ideas'), list('project_devs'), list('projects')]);
+      const PN = Object.fromEntries(projects.map(p => [p.id, p.name]));
+      const sleepy = [...allIdeas.map(i => ({ t: 'idea', r: i, d: dormantDays(i), where: 'فكرة' })), ...allDevs.map(x => ({ t: 'dev', r: x, d: dormantDays(x), where: PN[x.project_id] ? 'مشروع ' + PN[x.project_id] : 'مشروع' }))]
+        .filter(x => x.d).sort((a, b) => b.d - a.d);
       const [rev, tasks, goals, probs, devs, past] = await Promise.all([
         list('weekly_reviews', { eq: { week_start: ws } }), list('tasks', { gte: ['due_on', ws], lte: ['due_on', we] }),
         list('goals', { eq: { status: 'done' }, gte: ['done_on', ws] }), list('problems', { eq: { status: 'solved' }, gte: ['solved_on', ws] }),
@@ -64,6 +70,11 @@ export default {
         html: `<div class="stack" style="padding-bottom:20px">
           <div class="card" style="background:var(--dock);border-color:var(--dock);color:#fff;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px">
             ${stat(`${tasks.filter(x => x.done).length}/${tasks.length}`, 'مهام خلصت')}${stat(goals.length, 'هدف اتحقق')}${stat(probs.length, 'مشاكل اتحلت')}${stat(devs.length, 'تطوير اتطبق في مشاريعي')}</div>
+          ${sleepy.length ? `<div class="card stack" style="gap:8px"><div class="row" style="gap:6px">${ic('moon', 20)}<b style="font-weight:600;flex:1">أفكار نايمة</b><span class="num mut">${sleepy.length}</span></div>
+            <div class="mut" style="font-size:13px">بقالها ${SLEEP_DAYS} يوم أو أكتر محدش لمسها. قرّر: تطوّرها ولا تشيلها؟</div>
+            <div class="list">${sleepy.slice(0, 6).map(x => `<div style="padding:8px 0"><a href="${x.t === 'idea' ? '#/idea/' : '#/dev/'}${x.r.id}" style="display:block;line-height:1.4"><b style="font-weight:500">${esc(x.r.title)}</b><br><small class="mut">${esc(x.where)} · نايمة من ${x.d} يوم</small></a>
+              <div class="row" style="gap:6px;margin-top:6px"><button class="btn sm pri" data-act="wake" data-t="${x.t}" data-id="${x.r.id}">هطوّرها</button><button class="btn sm" data-act="sleep-archive" data-t="${x.t}" data-id="${x.r.id}">${ic('archive', 16)}شيلها</button></div></div>`).join('')}</div>
+            ${sleepy.length > 6 ? `<div class="mut" style="font-size:13px">وكمان ${sleepy.length - 6} أفكار نايمة</div>` : ''}</div>` : ''}
           <form class="stack" data-act-submit="review-save" data-ws="${ws}">
             <label class="card field"><span>إيه اللي مشي كويس؟</span><textarea name="went_well" rows="3">${esc(r.went_well)}</textarea></label>
             <label class="card field"><span>إيه اللي اتعطل، وليه؟</span><textarea name="blocked" rows="3">${esc(r.blocked)}</textarea></label>
@@ -76,6 +87,14 @@ export default {
       };
     },
     actions: {
+      // "هطوّرها": الفكرة بتصحى (بتتنقل لمرحلة بعدها لو لسه في الأول) وبتفتح صفحتها
+      async wake(el) {
+        const idea = el.dataset.t === 'idea', table = idea ? 'ideas' : 'project_devs';
+        const r = (await list(table, { eq: { id: el.dataset.id } }))[0]; if (!r) return;
+        const stage = idea ? (r.stage === 'raw' ? 'developing' : r.stage) : (r.stage === 'idea' ? 'plan' : r.stage);
+        try { await upd(table, r.id, { stage, updated_at: new Date().toISOString() }); toast('صحيت. كمّل عليها'); location.hash = `${idea ? '#/idea/' : '#/dev/'}${r.id}`; } catch (e) { fail(e); }
+      },
+      async 'sleep-archive'(el) { await archiveWithUndo(el.dataset.t === 'idea' ? 'ideas' : 'project_devs', el.dataset.id, 'اتشالت للأرشيف'); },
       async 'review-save'(form) {
         const f = formOf(form);
         try { await upsert('weekly_reviews', { week_start: form.dataset.ws, went_well: f.went_well || null, blocked: f.blocked || null, next_top3: [f.t0, f.t1, f.t2].filter(Boolean) }, 'user_id,week_start'); toast('المراجعة اتحفظت'); doRefresh(); } catch (e) { fail(e); }

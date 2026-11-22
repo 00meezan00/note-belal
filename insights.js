@@ -137,7 +137,7 @@ export async function companyProgress() {
   const weeks = [...Array(8)].map((_, i) => addDays(t, -7 * (7 - i) - 6));   // بداية كل أسبوع من آخر 8
   const solved = problems.filter(p => p.status === 'solved');
   const solveDays = solved.filter(p => p.solved_on && p.created_at).map(p => Math.max(0, (Date.parse(p.solved_on) - Date.parse(p.created_at.slice(0, 10))) / 864e5));
-  const cats = {}; problems.filter(p => p.status !== 'solved').forEach(p => { const c = p.category || 'من غير نوع'; cats[c] = (cats[c] || 0) + 1; });
+  const cats = {}; problems.filter(p => p.status !== 'solved').forEach(p => { const c = p.category || 'من غير مجال'; cats[c] = (cats[c] || 0) + 1; });
   const areas = {}; active.forEach(g => { (areas[g.area] ||= []).push(g.progress); });
   return {
     t, active, metrics,

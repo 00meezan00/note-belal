@@ -4,16 +4,17 @@ import * as CFG from './config.js';
 const VAPID_PUBLIC_KEY = CFG.VAPID_PUBLIC_KEY || '', WORKER_URL = CFG.WORKER_URL || '';
 import { esc, ic, fd, today, empty, openSheet, closeSheet, sheetEl, formOf, toast, fail, opts, sw } from './ui.js';
 import { KIND, hrefOf, linksSlot, fillLinks, archiveWithUndo, doRefresh, openTask } from './comps.js';
+import { lifeData, taPicker, taRow, taValue, trackByName } from './life.js';
 
 const ps = { tab: 'open', cat: '' };
-const CATS = ['إرجاع','كول سنتر','موردين','فنيين','تحصيل','عملاء','تسويق','أخرى'];
 const PSTAT = { open: ['مفتوحة', 'amb'], solving: ['بتتحل', ''], solved: ['اتحلت', 'ok'] };
 
 async function problemSheet(p = {}) {
+  const d = await lifeData(), fix = d.tracks.find(t => /fix/i.test(t.name));
   openSheet(p.id ? 'المشكلة' : 'مشكلة جديدة', `
     <label class="field"><span>المشكلة</span><input name="title" value="${esc(p.title)}" autofocus></label>
-    <div class="grid2"><label class="field"><span>النوع</span><select name="category"><option value="">من غير</option>${opts(CATS, p.category)}</select></label>
-    <label class="field"><span>الحالة</span><select name="status">${opts(Object.entries(PSTAT).map(([k, v]) => [k, v[0]]), p.status || 'open')}</select></label></div>
+    ${taPicker(d, p.id ? taValue(p) : fix ? 't:' + fix.id : '', { label: 'المجال' })}
+    <label class="field"><span>الحالة</span><select name="status">${opts(Object.entries(PSTAT).map(([k, v]) => [k, v[0]]), p.status || 'open')}</select></label>
     <label class="field"><span>السبب</span><textarea name="cause" rows="2">${esc(p.cause)}</textarea></label>
     <label class="field"><span>الحل</span><textarea name="solution" rows="2">${esc(p.solution)}</textarea></label>
     ${p.id ? `<div class="between card" style="padding:10px 14px"><span>اتكررت <b class="num">${p.occurrences}</b> مرة</span><button class="btn sm" data-act="prob-again" data-id="${p.id}">اتكررت تاني</button></div>
@@ -23,7 +24,7 @@ async function problemSheet(p = {}) {
   if (p.id) fillLinks(sheetEl());
 }
 
-const ARCH_TABLES = [['tasks', 'title', 'مهمة'], ['goals', 'title', 'هدف'], ['ideas', 'title', 'فكرة'], ['problems', 'title', 'مشكلة'], ['team_members', 'name', 'فرد'], ['company_metrics', 'label', 'مؤشر'], ['company_log', 'text', 'تطور'], ['projects', 'name', 'مشروع'], ['project_devs', 'title', 'تطوير في مشروع'], ['project_clients', 'name', 'عميل مشروع'], ['courses', 'title', 'كورس'], ['sops', 'title', 'إجراء'], ['positions', 'title', 'مكان فاضي'], ['candidates', 'name', 'متقدم'], ['recurring_tasks', 'title', 'مهمة متكررة']];
+const ARCH_TABLES = [['tasks', 'title', 'مهمة'], ['goals', 'title', 'هدف'], ['ideas', 'title', 'فكرة'], ['problems', 'title', 'مشكلة'], ['team_members', 'name', 'فرد'], ['company_metrics', 'label', 'مؤشر'], ['company_log', 'text', 'تطور'], ['projects', 'name', 'مشروع'], ['project_devs', 'title', 'تطوير في مشروع'], ['project_clients', 'name', 'عميل مشروع'], ['courses', 'title', 'كورس'], ['sops', 'title', 'إجراء'], ['positions', 'title', 'مكان فاضي'], ['candidates', 'name', 'متقدم'], ['recurring_tasks', 'title', 'مهمة متكررة'], ['habits', 'title', 'عادة'], ['life_tracks', 'name', 'مسار'], ['life_areas', 'name', 'مجال']];
 
 export default {
   problems: {
@@ -39,7 +40,7 @@ export default {
           <div class="seg"><button class="${ps.tab === 'open' ? 'on' : ''}" data-act="prob-tab" data-v="open">مفتوحة <span class="num">${open.length}</span></button><button class="${ps.tab === 'solved' ? 'on' : ''}" data-act="prob-tab" data-v="solved">اتحلت <span class="num">${solved.length}</span></button></div>
           ${cats.length ? `<div class="pills"><button class="${ps.cat ? '' : 'on'}" data-act="prob-cat" data-v="">الكل</button>${cats.map(c => `<button class="${ps.cat === c ? 'on' : ''}" data-act="prob-cat" data-v="${esc(c)}">${esc(c)}</button>`).join('')}</div>` : ''}
           ${L.length ? L.map(x => `<button class="card stack" style="gap:6px" data-act="prob-open" data-id="${x.id}">
-            <div class="between"><span class="chip">${esc(x.category || 'من غير نوع')}</span><span class="tag ${PSTAT[x.status][1]}">${PSTAT[x.status][0]}</span></div>
+            <div class="between"><span class="chip">${esc(x.category || 'من غير مجال')}</span><span class="tag ${PSTAT[x.status][1]}">${PSTAT[x.status][0]}</span></div>
             <div class="title">${esc(x.title)}</div>
             ${x.cause ? `<div class="mut" style="font-size:14px">السبب: <span style="color:var(--ink)">${esc(x.cause)}</span></div>` : ''}
             ${x.occurrences > 1 ? `<div class="late row" style="gap:4px;font-size:13px">${ic('repeat', 15)}اتكررت <span class="num">${x.occurrences}</span> مرات</div>` : ''}
@@ -55,14 +56,14 @@ export default {
       async 'prob-open'(el) { problemSheet(await one('problems', el.dataset.id)); },
       async 'prob-save'(el) {
         const f = formOf(sheetEl()); if (!f.title) return toast('اكتب المشكلة');
-        const row = { title: f.title, category: f.category || null, status: f.status, cause: f.cause || null, solution: f.solution || null, solved_on: f.status === 'solved' ? today() : null };
+        const row = { title: f.title, ...taRow(f.ta, await lifeData(), 'category'), status: f.status, cause: f.cause || null, solution: f.solution || null, solved_on: f.status === 'solved' ? today() : null };
         try { if (el.dataset.id) await upd('problems', el.dataset.id, row); else await ins('problems', row); closeSheet(); doRefresh(); } catch (e) { fail(e); }
       },
       async 'prob-again'(el) { const x = await one('problems', el.dataset.id); try { await upd('problems', x.id, { occurrences: x.occurrences + 1, status: x.status === 'solved' ? 'open' : x.status }); problemSheet(await one('problems', x.id)); doRefresh(); } catch (e) { fail(e); } },
       async 'prob-task'(el) { const x = await one('problems', el.dataset.id); openTask(null, { title: 'حل: ' + x.title, _link: { type: 'problem', id: x.id, title: x.title } }); },
       async 'prob-goal'(el) {
         const x = await one('problems', el.dataset.id);
-        try { const g = await ins('goals', { title: 'حل مشكلة: ' + x.title, why: x.cause }); await link('goal', g.id, 'problem', x.id); closeSheet(); location.hash = `#/goal/${g.id}`; } catch (e) { fail(e); }
+        try { const g = await ins('goals', { title: 'حل مشكلة: ' + x.title, why: x.cause, track_id: x.track_id || null, area_id: x.area_id || null, area: x.category || 'من غير مجال' }); await link('goal', g.id, 'problem', x.id); closeSheet(); location.hash = `#/goal/${g.id}`; } catch (e) { fail(e); }
       },
       async 'prob-archive'(el) { closeSheet(); await archiveWithUndo('problems', el.dataset.id, 'المشكلة اتنقلت للأرشيف'); },
     },
@@ -114,7 +115,7 @@ export default {
             <div class="seg" style="margin-top:8px">${[['system', 'زي الموبايل'], ['light', 'فاتح'], ['dark', 'ليلي']].map(([k, l]) => `<button class="${t === k ? 'on' : ''}" data-act="theme" data-v="${k}">${l}</button>`).join('')}</div></div>
           <div class="card list"><b style="font-weight:600;display:block;padding-bottom:4px">التذكيرات</b>
             ${row('الإشعارات على الموبايل', pushState === 'on' ? 'شغالة على الموبايل ده' : pushState === 'denied' ? 'مقفولة من إعدادات الآيفون: الإعدادات ← الإشعارات ← نوتة بلال' : pushState === 'unsupported' ? 'افتح التطبيق من أيقونة الشاشة الرئيسية الأول' : 'لسه مش متفعلة', pushState === 'on' ? (WORKER_URL ? '<button class="btn sm" data-act="push-test">جرّب</button>' : '') : pushState === 'unsupported' || pushState === 'denied' ? '' : '<button class="btn sm amb" data-act="push-enable">فعّل</button>')}
-            ${row('تذكير الصبح بمهام النهاردة', `<input type="time" class="inp" style="width:auto;min-height:36px;margin-top:4px" value="${(p?.morning_reminder || '08:30').slice(0, 5)}" data-change="pref-time" data-k="morning_reminder">`, sw(p?.morning_enabled, 'data-act="pref" data-k="morning_enabled"'))}
+            ${row('ملخص الصبح', `<div class="mut" style="font-size:13px">مهامك، والمتأخر، وكورسات النهاردة، والكورسات اللي فاتتك، وتذكيرات الأفكار</div><div class="row" style="gap:6px;margin-top:4px"><input type="time" class="inp" style="width:auto;min-height:36px" value="${(p?.morning_reminder || '08:30').slice(0, 5)}" data-change="pref-time" data-k="morning_reminder">${pushState === 'on' && WORKER_URL ? '<button class="btn sm" data-act="push-test" data-morning="1">ابعته دلوقتي</button>' : ''}</div>`, sw(p?.morning_enabled, 'data-act="pref" data-k="morning_enabled"'))}
             ${row('تذكير بالليل تراجع يومك', `<input type="time" class="inp" style="width:auto;min-height:36px;margin-top:4px" value="${(p?.evening_reminder || '22:00').slice(0, 5)}" data-change="pref-time" data-k="evening_reminder">`, sw(p?.evening_enabled, 'data-act="pref" data-k="evening_enabled"'))}
             <div class="mut" style="padding-top:8px">تذكير كل هدف أو مهمة بيتظبط من جوّاه.${WORKER_URL ? '' : ' الإشعارات هتوصل بعد ما تعمل الـ Worker على Cloudflare.'}</div></div>
           <div class="card"><b style="font-weight:600">معايير التقييم لكل وظيفة</b><div class="mut">افصل بين المعايير بفاصلة</div>
@@ -152,7 +153,7 @@ export default {
           toast('الإشعارات اتفعلت. دوس "جرّب"'); doRefresh();
         } catch (e) { toast(e.message || 'ما قدرتش أفعّل الإشعارات'); } finally { el.disabled = false; }
       },
-      // زرار "جرّب": بيطلب من الـ Worker يبعت إشعار تجربة
+      // زرار "جرّب": بيطلب من الـ Worker يبعت إشعار تجربة. ولو data-morning: بيبعت ملخص الصبح دلوقتي
       async 'push-test'(el) {
         el.disabled = true;
         try {
@@ -163,9 +164,9 @@ export default {
           await saveSub(sub);
           const { data } = await sb.auth.getSession();
           let r;
-          try { r = await fetch(WORKER_URL.replace(/\/$/, '') + '/test', { method: 'POST', headers: { Authorization: `Bearer ${data.session.access_token}` } }); }
+          try { r = await fetch(WORKER_URL.replace(/\/$/, '') + '/test' + (el.dataset.morning ? '?morning=1' : ''), { method: 'POST', headers: { Authorization: `Bearer ${data.session.access_token}` } }); }
           catch (_) { return alertBox('ما قدرتش أوصل للـ Worker', 'الأغلب إن الـ Worker القديم لسه على Cloudflare. حط كود reminders.js الجديد فيه ودوس Deploy.'); }
-          if (r.ok) { const res = await r.json().catch(() => ({})); return res.check ? alertBox('إشعار التجربة اتبعت', checkText(res.check), true) : toast('اتبعت. هيوصلك إشعار كمان ثواني'); }
+          if (r.ok) { const res = await r.json().catch(() => ({})); if (res.morning) return alertBox('ملخص الصبح اتبعت', res.morning, true); if (el.dataset.morning) return alertBox('الـ Worker قديم', 'حط كود الـ Worker الجديد في Cloudflare ودوس Deploy، وبعدين جرّب تاني.', true); return res.check ? alertBox('إشعار التجربة اتبعت', checkText(res.check), true) : toast('اتبعت. هيوصلك إشعار كمان ثواني'); }
           const why = await r.json().then(x => x.error).catch(() => '');
           if (r.status === 401) toast('الـ Worker مش عارف حسابك. اتأكد من SUPABASE_URL و SUPABASE_SERVICE_KEY في Cloudflare');
           else alertBox(`الإشعار ما وصلش (${r.status})`, why || 'مفيش تفاصيل');
