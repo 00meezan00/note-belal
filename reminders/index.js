@@ -16,6 +16,22 @@ export default {
     const json = (o, status = 200) => new Response(JSON.stringify(o), { status, headers: { ...cors, 'Content-Type': 'application/json; charset=utf-8' } });
     if (req.method === 'OPTIONS') return new Response(null, { headers: cors });
     const url = new URL(req.url);
+    // اختصار سيري: بيبعت الكلام هنا بالمفتاح بتاعك، وبيتحط في صندوق الوارد
+    if (url.pathname === '/inbox' && req.method === 'POST') {
+      try {
+        const tok = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '').trim();
+        if (!/^[a-f0-9]{20,}$/.test(tok)) return json({ error: 'المفتاح مش مظبوط' }, 401);
+        const raw = await req.text(); let text = raw;
+        try { const j = JSON.parse(raw); text = j.text ?? j['النص'] ?? Object.values(j)[0]; } catch (_) {}
+        text = String(text || '').trim().slice(0, 4000);
+        if (!text) return json({ error: 'مفيش كلام' }, 400);
+        const [p] = await db(env, `profiles?select=user_id&shortcut_token=eq.${tok}`);
+        if (!p) return json({ error: 'المفتاح ده مش شغال. اعمل مفتاح جديد من الإعدادات' }, 401);
+        const r = await fetch(`${env.SUPABASE_URL}/rest/v1/inbox`, { method: 'POST', headers: { ...auth(env), 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify({ user_id: p.user_id, text }) });
+        if (!r.ok) return json({ error: 'ما اتحفظش: ' + (await r.text()).slice(0, 200) }, 500);
+        return json({ ok: true, saved: text });
+      } catch (e) { return json({ error: String(e && e.message || e) }, 500); }
+    }
     if (url.pathname === '/test' && req.method === 'POST') {
       // أي خطأ هنا بيرجع للتطبيق بسببه، بدل ما الـ Worker يقع ساكت
       try {
@@ -95,6 +111,19 @@ async function remindUser(env, p) {
           await sendToUser(env, uid, { title: left === 0 ? 'النهاردة مناسبة 🎉' : `بعد ${before === 2 ? 'يومين' : before + ' أيام'}: مناسبة`, body: o.title + (o.person ? ` (${o.person})` : ''), url: './#/life' });
         }
       }
+    });
+    // ميزان الحياة: آخر يوم في الشهر الساعة 9 بالليل
+    await safe('wheel', async () => {
+      const lastDay = new Date(Date.parse(date + 'T12:00:00Z') + 864e5).toISOString().slice(8, 10) === '01';
+      if (lastDay && minutes >= 21 * 60 && await claim(env, uid, `wheel:${date.slice(0, 7)}`))
+        await sendToUser(env, uid, { title: 'ميزان حياتك', body: 'الشهر خلص. قيّم كل مسار من 1 لـ 10 في دقيقة، وشوف أنهي ناحية محتاجة اهتمام.', url: './#/life?wheel=1' });
+    });
+    // النسخة الاحتياطية: كل جمعة الساعة 8 بالليل (لو التذكير شغال)
+    await safe('backup', async () => {
+      if (dow !== 5 || minutes < 20 * 60) return;
+      const [b] = await db(env, `profiles?select=backup_enabled&user_id=eq.${uid}`);
+      if (b && b.backup_enabled === false) return;
+      if (await claim(env, uid, `backup:${date}`)) await sendToUser(env, uid, { title: 'نسخة الأسبوع', body: 'دوس هنا وانزّل نسخة احتياطية من النوتة في ثانية.', url: './#/backup' });
     });
     await safe('goals', async () => {
     const goals = await db(env, `goals?select=id,title,due_on,reminder_time&user_id=eq.${uid}&status=eq.active&archived_at=is.null&reminder_enabled=is.true`);
