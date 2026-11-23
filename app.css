@@ -633,3 +633,17 @@ html,body{overscroll-behavior:none}
 .nt-gok{min-height:42px;border-radius:12px;border:0;background:var(--amb);color:#15202B;font-weight:600;font-size:15px;cursor:pointer}
 .nt-gok:disabled{background:var(--mat);color:var(--mut);border:1px solid var(--line)}
 .nt-gpan{max-height:none}
+
+/* الجدول جوه الدفتر: بيتكتب فيه على طول */
+.nt-inl{border:1px solid var(--line);border-radius:10px;margin:6px 0 0;overflow-x:auto;-webkit-overflow-scrolling:touch}
+.nt-inl table{border-collapse:collapse;font-size:.92em;min-width:100%;table-layout:auto}
+.nt-inl th,.nt-inl td{border:0;border-bottom:1px solid var(--line);border-inline-start:1px solid var(--line);padding:7px 9px;text-align:start;vertical-align:top;outline:none;word-break:break-word;min-height:2em}
+.nt-inl tr>*:first-child{border-inline-start:0}
+.nt-inl tr:last-child>*{border-bottom:0}
+.nt-inl th{background:var(--mat);font-weight:600}
+.nt-inl tr[class*=nt-c-]>*{background:color-mix(in srgb,var(--nc) 14%,var(--paper))}
+.nt-inl th:focus,.nt-inl td:focus{box-shadow:inset 0 0 0 2px var(--amb)}
+.nt-tft{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:4px 0 4px}
+.nt-tft .mut{font-size:12px}
+.nt-tft .nt-topen{margin:0;min-height:30px;font-size:12.5px}
+.nt-tpan .nt-dot{width:26px;height:26px}

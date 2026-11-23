@@ -133,6 +133,7 @@ export async function mountNotes(host, { table, id, now, seek, label }) {
       <button type="button" class="nt-gok" data-a="mktable" data-r="3" data-c="3" disabled>اختار المقاس الأول</button>
     </div>
     <div class="nt-pan" data-p="toc" hidden><div class="nt-toc"></div></div>
+    <div class="nt-pan nt-tpan" data-p="table" hidden><div class="nt-row"><button type="button" data-a="row+">+ صف</button><button type="button" data-a="col+">+ عمود</button><button type="button" data-a="row-">− صف</button><button type="button" data-a="col-">− عمود</button><span class="nt-sep"></span>${dots('color', '')}</div></div>
     <div class="nt-pan" data-p="find" hidden><div class="nt-row"><input class="inp nt-q" placeholder="دوّر على كلمة…" enterkeyhint="search"><span class="mut nt-qn"></span><button type="button" data-a="qprev" aria-label="اللي قبله">↑</button><button type="button" data-a="qnext" aria-label="اللي بعده">↓</button></div></div>
     <div class="nt-main">
       <button type="button" data-a="panel" data-p="fmt" aria-label="شكل الكلام"><span class="nt-aa" dir="ltr">Aa</span></button>
@@ -158,9 +159,10 @@ export async function mountNotes(host, { table, id, now, seek, label }) {
   function tableHtml(b, ed) {
     const R = b.rows, nc = R[0].length;
     b.cw = Array.from({ length: nc }, (_, i) => (b.cw || [])[i] || COLW);
-    if (!ed) return `<div class="nt-tw nt-prev" role="button" tabindex="0" aria-label="جدول ${R.length} × ${nc}، دوس عشان تعدّله"><table><tbody>
-      ${R.slice(0, 8).map((r, ri) => `<tr class="${(b.rc || [])[ri] ? 'nt-c-' + b.rc[ri] : ''}">${r.map((x, ci) => `<${ri ? 'td' : 'th'} data-r="${ri}" data-c="${ci}" style="min-width:${Math.min(b.cw[ci], 180)}px">${esc(x) || '&nbsp;'}</${ri ? 'td' : 'th'}>`).join('')}</tr>`).join('')}
-      </tbody></table></div><button type="button" class="nt-topen" data-a="topen" data-bid="${b.id}"><span>✎ عدّل الجدول</span><span class="mut">${R.length} صف · ${nc} عمود</span>${R.length > 8 ? `<span class="mut">+${R.length - 8} صف</span>` : ''}</button>`;
+    // في الدفتر: الجدول بيتكتب فيه على طول زي أي سطر (والشاشة مبتتغيرش). "⤢ كبّر" بيفتحه على الشاشة كلها لو عايز
+    if (!ed) return `<div class="nt-tw nt-inl"><table><tbody>
+      ${R.map((r, ri) => `<tr class="${(b.rc || [])[ri] ? 'nt-c-' + b.rc[ri] : ''}">${r.map((x, ci) => `<${ri ? 'td' : 'th'} contenteditable="true" data-r="${ri}" data-c="${ci}" style="min-width:${Math.max(70, Math.min(b.cw[ci], 220))}px">${esc(x)}</${ri ? 'td' : 'th'}>`).join('')}</tr>`).join('')}
+      </tbody></table></div><div class="nt-tft" contenteditable="false"><span class="mut">${R.length} صف · ${nc} عمود</span><button type="button" class="nt-topen" data-a="topen" data-bid="${b.id}">⤢ كبّر الجدول</button></div>`;
     const W = 30 + b.cw.reduce((s, w) => s + w, 0);
     return `<table class="nt-et" style="width:${W}px;--tw:${W}px"><colgroup><col style="width:30px">${b.cw.map(w => `<col style="width:${w}px">`).join('')}</colgroup>
       <tr class="nt-hrow"><td class="nt-rh nt-corner"></td>${b.cw.map((_, ci) => `<td class="nt-ch"><span class="nt-cl">${ci + 1}</span><span class="nt-cgrip" data-cg="${ci}" aria-hidden="true"></span></td>`).join('')}</tr>
@@ -206,7 +208,8 @@ export async function mountNotes(host, { table, id, now, seek, label }) {
     if (fresh) for (const fid of fresh) doc.querySelector(`[data-id="${fid}"]`)?.classList.add('nt-new');
     if (focusId) {
       const h = doc.querySelector(`[data-id="${focusId}"]`);
-      if (h?.querySelector('.nt-tx')) placeCaret(h.querySelector('.nt-tx'), pos);
+      if (cellRC) placeCaret(h?.querySelector(`[data-r="${cellRC[0]}"][data-c="${cellRC[1]}"]`) || h?.querySelector('th,td'), null);
+      else if (h?.querySelector('.nt-tx')) placeCaret(h.querySelector('.nt-tx'), pos);
     }
     paintBar(); if (panel === 'toc') paintToc(); if (panel === 'find') runFind(false);
   }
@@ -216,6 +219,9 @@ export async function mountNotes(host, { table, id, now, seek, label }) {
     dock.querySelectorAll('[data-t]').forEach(x => x.classList.toggle('on', !!b && b.type === x.dataset.t));
     dock.querySelector('[data-a=fork]').classList.toggle('on', !!b && b.type === 'arrow');
     const colNow = isT ? (b.rc || [])[cell ? cell[0] : -1] : b?.c;
+    const inCell = isT && cell && doc.contains(document.activeElement) && document.activeElement.matches('th,td');
+    if (inCell && !panel) showPanel('table', true);
+    if (!inCell && panel === 'table') showPanel('', true);
     dock.querySelectorAll('[data-a=color]').forEach(d => d.classList.toggle('on', (colNow || '') === d.dataset.col));
     const el = b && !isT && b.type !== 'hr' && doc.querySelector(`[data-id="${b.id}"]`);
     if (el && !fork && !el.classList.contains('nt-hid') && doc.contains(document.activeElement)) { forkBtn.hidden = false; forkBtn.style.top = `${el.offsetTop + Math.min(el.offsetHeight, 40) / 2 - 15}px`; } else forkBtn.hidden = true;
@@ -294,9 +300,7 @@ export async function mountNotes(host, { table, id, now, seek, label }) {
   doc.addEventListener('click', e => {
     const ts = e.target.closest('.nt-ts'); if (ts && seek) { e.preventDefault(); seek(Number(ts.dataset.ts), ts.dataset.v || null); return; }
     const hr = e.target.closest('.nt-hr'); if (hr) { cur = hr.dataset.id; hr.focus(); paintBar(); }
-    const tp = e.target.closest('.nt-prev'); if (tp) { const cellEl = e.target.closest('[data-r]'); openTable(tp.closest('.nt-b').dataset.id, cellEl ? [+cellEl.dataset.r, +cellEl.dataset.c] : [0, 0]); }
   });
-  doc.addEventListener('keydown', e => { const tp = e.target.closest?.('.nt-prev'); if (tp && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openTable(tp.closest('.nt-b').dataset.id, [0, 0]); } });
   doc.addEventListener('keydown', e => {
     const el = e.target;
     if (el.matches('.nt-fork-in')) {
@@ -305,6 +309,13 @@ export async function mountNotes(host, { table, id, now, seek, label }) {
       return;
     }
     if ((e.metaKey || e.ctrlKey) && /^[zZ]$/.test(e.key)) { e.preventDefault(); return e.shiftKey ? redo() : undo(); }
+    if (el.matches('th,td') && e.key === 'Enter' && !e.shiftKey && !e.isComposing) {   // إنتر في الجدول = الخانة اللي تحتها (ولو آخر صف: صف جديد)
+      e.preventDefault();
+      const tb = get(el.closest('.nt-b').dataset.id), r = +el.dataset.r, c = +el.dataset.c;
+      if (r + 1 < tb.rows.length) return placeCaret(el.closest('table').querySelector(`[data-r="${r + 1}"][data-c="${c}"]`), null);
+      remember(); tb.rows.push(Array(tb.rows[0].length).fill('')); (tb.rh ||= []).push(null); (tb.rc ||= []).push('');
+      cur = tb.id; draw(tb.id, null, [r + 1, c]); save(); remember(); return;
+    }
     if (!el.matches('.nt-tx')) return;
     const b = get(el.closest('.nt-b').dataset.id); if (!b) return;
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
