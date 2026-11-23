@@ -32,6 +32,16 @@ export default {
         return json({ ok: true, saved: text });
       } catch (e) { return json({ error: String(e && e.message || e) }, 500); }
     }
+    // تعلّمي: بتبعت لينك كورس أو بودكاست، والـ Worker يفتحه ويرجّع مدته (ولو قايمة يوتيوب: عدد الفيديوهات)
+    if (url.pathname === '/duration' && req.method === 'POST') {
+      try {
+        const token = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '');
+        const u = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, { headers: { apikey: env.SUPABASE_SERVICE_KEY, Authorization: `Bearer ${token}` } });
+        if (!u.ok) return json({ error: 'لازم تكون داخل على النوتة' }, 401);
+        const { url: link } = await req.json();
+        return json(await linkDuration(String(link || '').trim()));
+      } catch (e) { return json({ error: 'ما قدرتش أفتح اللينك: ' + String(e && e.message || e).slice(0, 120) }, 500); }
+    }
     if (url.pathname === '/test' && req.method === 'POST') {
       // أي خطأ هنا بيرجع للتطبيق بسببه، بدل ما الـ Worker يقع ساكت
       try {
@@ -372,4 +382,116 @@ async function webPush(env, sub, payload) {
   const body = await encryptPayload(sub.p256dh, sub.auth, payload);
   return fetch(sub.endpoint, { method: 'POST', body, headers: {
     Authorization: await vapidAuth(env, sub.endpoint), 'Content-Encoding': 'aes128gcm', 'Content-Type': 'application/octet-stream', TTL: '86400', Urgency: 'high' } });
+}
+
+
+// ======================= مدة الكورس أو البودكاست من اللينك =======================
+const UA = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36', 'Accept-Language': 'en-US,en;q=0.8,ar;q=0.6', Cookie: 'CONSENT=YES+cb; SOCS=CAI' };
+// "PT1H30M" أو "P1DT2H" ← ثواني
+function isoSecs(v) {
+  const m = /^P(?:(\d+(?:\.\d+)?)D)?(?:T(?:(\d+(?:\.\d+)?)H)?(?:(\d+(?:\.\d+)?)M)?(?:(\d+(?:\.\d+)?)S)?)?$/i.exec(String(v || '').trim());
+  if (!m || !(m[1] || m[2] || m[3] || m[4])) return null;
+  return Math.round((+m[1] || 0) * 86400 + (+m[2] || 0) * 3600 + (+m[3] || 0) * 60 + (+m[4] || 0));
+}
+// "1:02:03" أو "45:10" أو "2700" ← ثواني
+function clockSecs(v) {
+  v = String(v || '').trim(); if (!v) return null;
+  if (/^P/i.test(v)) return isoSecs(v);
+  if (/^\d+(\.\d+)?$/.test(v)) return Math.round(+v);
+  const p = v.split(':').map(Number); if (p.some(isNaN)) return null;
+  return p.reduce((s, x) => s * 60 + x, 0);
+}
+const decode = s => String(s || '').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;|&#x27;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').trim();
+const titleOf = h => decode((/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)/i.exec(h) || /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:title/i.exec(h) || /<title[^>]*>([^<]+)/i.exec(h) || [])[1]).replace(/\s*-\s*YouTube$/, '') || null;
+const result = (secs, title, extra = {}) => secs > 0 ? { minutes: Math.max(1, Math.round(secs / 60)), title, ...extra } : null;
+
+async function getText(u) {
+  const r = await fetch(u, { headers: UA, redirect: 'follow', cf: { cacheTtl: 3600 } });
+  if (!r.ok) throw new Error('الموقع رجّع ' + r.status);
+  return { text: (await r.text()).slice(0, 6_000_000), type: r.headers.get('content-type') || '' };
+}
+
+// يوتيوب: فيديو واحد أو قايمة تشغيل (كورس)
+function ytPlaylistFrom(h) {
+  const seen = new Map();
+  const re = /"playlistVideoRenderer":\{"videoId":"([\w-]{11})"/g; let m;
+  while ((m = re.exec(h))) {
+    const chunk = h.slice(m.index, m.index + 12000);
+    const end = chunk.indexOf('"playlistVideoRenderer"', 30);
+    const own = end > 0 ? chunk.slice(0, end) : chunk;
+    const l = /"lengthSeconds":"(\d+)"/.exec(own);
+    if (l && !seen.has(m[1])) seen.set(m[1], +l[1]);
+  }
+  const secs = [...seen.values()].reduce((a, b) => a + b, 0);
+  const total = +((/"numVideosText":\{"runs":\[\{"text":"([\d,]+)"/.exec(h) || /"stats":\[\{"runs":\[\{"text":"([\d,]+)"/.exec(h) || [])[1] || '0').replace(/,/g, '');
+  return { secs, count: seen.size, total: total || seen.size };
+}
+async function youtube(u) {
+  const list = u.searchParams.get('list');
+  let v = u.searchParams.get('v');
+  if (u.hostname.endsWith('youtu.be')) v = u.pathname.slice(1, 12);
+  const sm = /^\/(?:shorts|live|embed)\/([\w-]{11})/.exec(u.pathname); if (sm) v = sm[1];
+  if (list && !/^(RD|UL|LL|WL)/.test(list)) {
+    const { text } = await getText(`https://www.youtube.com/playlist?list=${encodeURIComponent(list)}&hl=en`);
+    const p = ytPlaylistFrom(text);
+    if (p.secs) return result(p.secs, titleOf(text), { count: p.total, partial: p.total > p.count, source: 'قايمة يوتيوب' });
+    if (!v) return null;
+  }
+  if (!v) return null;
+  const { text } = await getText(`https://www.youtube.com/watch?v=${v}&hl=en`);
+  const l = /"lengthSeconds":"(\d+)"/.exec(text) || [];
+  const secs = +l[1] || isoSecs((/itemprop="duration" content="([^"]+)"/.exec(text) || [])[1]);
+  return result(secs, titleOf(text), { source: 'فيديو يوتيوب' });
+}
+
+// RSS بتاع بودكاست: مجموع مدد الحلقات
+function rssFrom(x) {
+  const items = x.split(/<item[\s>]/i).slice(1);
+  let secs = 0, n = 0;
+  for (const it of items) { const d = /<itunes:duration>\s*([^<]+?)\s*<\/itunes:duration>/i.exec(it); if (d) { const s = clockSecs(d[1]); if (s) { secs += s; n++; } } }
+  const title = decode((/<channel[\s\S]*?<title>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/title>/i.exec(x) || [])[1]);
+  return { secs, count: n, title: title || null };
+}
+
+// أي صفحة تانية: JSON-LD، meta، سبوتيفاي، يوديمي…
+function pageFrom(h) {
+  const cands = [];
+  for (const m of h.matchAll(/<script[^>]+application\/ld\+json[^>]*>([\s\S]*?)<\/script>/gi)) {
+    let j; try { j = JSON.parse(m[1].trim()); } catch (_) { continue; }
+    const walk = (o, depth) => {
+      if (!o || typeof o !== 'object' || depth > 6) return;
+      if (Array.isArray(o)) return o.forEach(x => walk(x, depth + 1));
+      for (const k of ['duration', 'timeRequired', 'courseWorkload']) if (typeof o[k] === 'string') { const s = isoSecs(o[k]); if (s) cands.push([depth, s]); }
+      for (const k of Object.keys(o)) if (o[k] && typeof o[k] === 'object') walk(o[k], depth + 1);
+    };
+    walk(j, 0);
+  }
+  if (cands.length) return cands.sort((a, b) => a[0] - b[0])[0][1];
+  const meta = /<meta[^>]+(?:property|name|itemprop)=["'](?:og:video:duration|video:duration|music:duration|og:audio:duration|duration)["'][^>]+content=["']([^"']+)/i.exec(h)
+    || /<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name|itemprop)=["'](?:og:video:duration|video:duration|music:duration|duration)["']/i.exec(h);
+  if (meta) { const s = clockSecs(meta[1]); if (s) return s; }
+  const ms = /"totalMilliseconds"\s*:\s*(\d+)/.exec(h) || /"duration_ms"\s*:\s*(\d+)/.exec(h);   // سبوتيفاي
+  if (ms) return Math.round(+ms[1] / 1000);
+  const ec = /"estimated_content_length"\s*:\s*(\d+)/.exec(h);   // يوديمي (بالدقايق)
+  if (ec) return +ec[1] * 60;
+  const iso = /"duration"\s*:\s*"(P[T\d][^"]*)"/.exec(h);
+  if (iso) { const s = isoSecs(iso[1]); if (s) return s; }
+  const hrs = /(\d+(?:\.\d+)?)\s*(?:total hours|hours? on-demand video|hours of video)/i.exec(h);
+  if (hrs) return Math.round(+hrs[1] * 3600);
+  return null;
+}
+
+async function linkDuration(link) {
+  if (/^[a-z][\w+.-]*:/i.test(link) && !/^https?:\/\//i.test(link)) return { error: 'اللينك مش مظبوط' };
+  let u; try { u = new URL(/^https?:\/\//i.test(link) ? link : 'https://' + link); } catch (_) { return { error: 'اللينك مش مظبوط' }; }
+  if (!/^https?:$/.test(u.protocol)) return { error: 'اللينك مش مظبوط' };
+  const host = u.hostname.replace(/^www\.|^m\.|^music\./, '');
+  if (/(^|\.)youtube\.com$|(^|\.)youtu\.be$/.test(host)) return (await youtube(u)) || { error: 'ملقيتش مدة الفيديو. اكتبها بإيدك' };
+  const { text, type } = await getText(u.href);
+  if (/xml|rss/i.test(type) || /^\s*<\?xml|<rss[\s>]/i.test(text.slice(0, 500))) {
+    const r = rssFrom(text);
+    return result(r.secs, r.title, { count: r.count, source: 'بودكاست (كل الحلقات)' }) || { error: 'ملقيتش مدد الحلقات في الـ RSS' };
+  }
+  const secs = pageFrom(text);
+  return result(secs, titleOf(text), { source: host }) || { error: 'الموقع ده مش بيقول المدة، اكتبها بإيدك' };
 }
