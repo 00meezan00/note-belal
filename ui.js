@@ -29,7 +29,7 @@ const I = {
   plus: '<path d="M12 5v14M5 12h14"/>', back: '<path d="M9 5l7 7-7 7"/>', chev: '<path d="M15 6l-6 6 6 6"/>', x: '<path d="M6 6l12 12M18 6L6 18"/>',
   cal: '<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4M16 3v4M4 10h16"/>', goal: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/>',
   team: '<circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="9" r="2.5"/><path d="M16 14c2.8 0 5 2.2 5 5"/>',
-  co: '<path d="M4 20V8l8-4 8 4v12M9 20v-6h6v6M3 20h18"/>', check: '<path d="M5 12l5 5 9-10"/>',
+  co: '<path d="M4 20V8l8-4 8 4v12M9 20v-6h6v6M3 20h18"/>', home: '<path d="M4 11l8-7 8 7"/><path d="M6 9.5V20h12V9.5M10 20v-5h4v5"/>', swap: '<path d="M7 4L4 7l3 3M4 7h13"/><path d="M17 20l3-3-3-3M20 17H7"/>', door: '<path d="M14 4H6v16h8"/><path d="M11 12h9M17 9l3 3-3 3"/>', check: '<path d="M5 12l5 5 9-10"/>',
   spark: '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/>', repeat: '<path d="M17 2l3 3-3 3"/><path d="M4 11V9a4 4 0 0 1 4-4h12M7 22l-3-3 3-3"/><path d="M20 13v2a4 4 0 0 1-4 4H4"/>',
   alert: '<path d="M12 4l9 16H3z"/><path d="M12 10v4M12 17v.5"/>', book: '<path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M4 21V5"/>',
   tree: '<rect x="9" y="3" width="6" height="4" rx="1"/><rect x="3" y="16" width="6" height="4" rx="1"/><rect x="15" y="16" width="6" height="4" rx="1"/><path d="M12 7v5M6 16v-4h12v4"/>',

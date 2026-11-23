@@ -1,5 +1,5 @@
 // النهاردة
-import { list, single } from './db.js';
+import { list, single, currentCompany } from './db.js';
 import { esc, ic, bat, fd, fdLong, today, addDays, dueText, empty, weekStart } from './ui.js';
 import { taskRow, openTask } from './comps.js';
 import { habitsTodayCard } from './habits.js';
@@ -34,7 +34,7 @@ export default {
         list('tasks', { lte: ['due_on', t], order: 'created_at' }),
         list('goals', { eq: { status: 'active' }, order: 'due_on' }),
         list('v_goal_progress'),
-        single('company'),
+        currentCompany().then(c => c || single('company')),
         list('weekly_reviews', { in: ['week_start', [weekStart(), addDays(weekStart(), -7)]] }),
         list('v_calendar', { in: ['kind', ['commitment', 'installment']], lte: ['on_date', addDays(t, 1)], order: 'on_date' }).catch(() => []),
       ]);

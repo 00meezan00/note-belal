@@ -6,14 +6,21 @@
   --safe-b:env(safe-area-inset-bottom,0px);--safe-t:env(safe-area-inset-top,0px);
   color-scheme:light;
 }
+/* الليلي: 3 ألوان تختار منهم من الإعدادات. الافتراضي "الورشة": حصيرة كحلي تحت لمبة كهرمان */
+:root{--n-mat:#10161F;--n-dot:#1A2230;--n-paper:#18202C;--n-ink:#EEE8DC;--n-mut:#9CA7B7;--n-line:#283344;
+  --n-amb:#F5B83D;--n-amb-soft:#3D3118;--n-ok:#4CC38A;--n-bad:#FF7B6B;--n-empty:#212B39;--n-dock:#090D13}
+:root[data-night=copper]{--n-mat:#17130F;--n-dot:#221C17;--n-paper:#1F1A15;--n-ink:#F2EAE0;--n-mut:#B3A596;--n-line:#372E26;
+  --n-amb:#E8955A;--n-amb-soft:#48291A;--n-ok:#73C48F;--n-bad:#FF8070;--n-empty:#2A231D;--n-dock:#0D0A08}
+:root[data-night=green]{--n-mat:#13221F;--n-dot:#1D312D;--n-paper:#1A2C28;--n-ink:#E7EFE9;--n-mut:#9DB2AA;--n-line:#2C433D;
+  --n-amb:#F5B32E;--n-amb-soft:#4A3B12;--n-ok:#52CE8F;--n-bad:#FF7F7F;--n-empty:#24392F;--n-dock:#0B1614}
 @media (prefers-color-scheme:dark){:root:not([data-theme=light]){
-  --mat:#13221F;--dot:#1D312D;--paper:#1A2C28;--ink:#E7EFE9;--mut:#9DB2AA;--line:#2C433D;
-  --amb:#F5B32E;--amb-soft:#4A3B12;--ok:#52CE8F;--bad:#FF7F7F;--empty:#24392F;--dock:#0B1614;--on-ink:#13221F;
-  --shadow:0 2px 0 #0B1614;color-scheme:dark}}
+  --mat:var(--n-mat);--dot:var(--n-dot);--paper:var(--n-paper);--ink:var(--n-ink);--mut:var(--n-mut);--line:var(--n-line);
+  --amb:var(--n-amb);--amb-soft:var(--n-amb-soft);--ok:var(--n-ok);--bad:var(--n-bad);--empty:var(--n-empty);--dock:var(--n-dock);--on-ink:var(--n-mat);
+  --shadow:0 2px 0 var(--n-dock);color-scheme:dark}}
 :root[data-theme=dark]{
-  --mat:#13221F;--dot:#1D312D;--paper:#1A2C28;--ink:#E7EFE9;--mut:#9DB2AA;--line:#2C433D;
-  --amb:#F5B32E;--amb-soft:#4A3B12;--ok:#52CE8F;--bad:#FF7F7F;--empty:#24392F;--dock:#0B1614;--on-ink:#13221F;
-  --shadow:0 2px 0 #0B1614;color-scheme:dark}
+  --mat:var(--n-mat);--dot:var(--n-dot);--paper:var(--n-paper);--ink:var(--n-ink);--mut:var(--n-mut);--line:var(--n-line);
+  --amb:var(--n-amb);--amb-soft:var(--n-amb-soft);--ok:var(--n-ok);--bad:var(--n-bad);--empty:var(--n-empty);--dock:var(--n-dock);--on-ink:var(--n-mat);
+  --shadow:0 2px 0 var(--n-dock);color-scheme:dark}
 
 *{box-sizing:border-box;min-width:0;-webkit-tap-highlight-color:transparent}
 html,body{margin:0}
@@ -252,3 +259,42 @@ a.card:active,button.card:active,.lnk:active{transform:scale(.985)}
 /* حالة المزامنة */
 #syncpill{position:fixed;top:calc(4px + var(--safe-t));left:50%;transform:translateX(-50%);z-index:55;background:var(--ink);color:var(--paper);font-size:12px;font-weight:500;padding:3px 12px;border-radius:999px;box-shadow:0 2px 8px rgba(0,0,0,.18);white-space:nowrap}
 #syncpill.off{background:var(--amb);color:#15202B}
+
+/* العنوان اللي بيفتح بيانات (اسم الشركة) */
+#top a.tlink{text-decoration:none;color:inherit;border-radius:12px}
+#top .tgo{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:9px;background:var(--amb);color:#15202B;vertical-align:-4px;margin-inline-start:6px}
+
+/* البايو في القايمة */
+.drawer .bio{all:unset;box-sizing:border-box;display:flex;flex-direction:column;gap:5px;padding:20px 20px 16px;border-bottom:1px dashed var(--line);cursor:pointer;position:relative}
+.drawer .bio:focus-visible{outline:2px solid var(--amb);outline-offset:-4px}
+.bio-name{font-size:26px;line-height:1.25}
+.bio-role{font-size:14px;font-weight:500;line-height:1.5;padding-inline-start:12px;border-inline-start:3px solid var(--amb)}
+.bio-role .at{color:var(--mut);font-weight:400}
+.bio-role b{font-weight:600}
+.bio-proj{display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin-top:3px}
+.bio-proj .mut{font-size:12px;margin-inline-end:2px}
+.bio-line{font-size:13px;color:var(--mut);line-height:1.55}
+.bio-edit{position:absolute;top:20px;left:16px;color:var(--mut);opacity:.8}
+.drawer .home{padding-top:6px}
+.drawer .home a{background:var(--mat);font-weight:600}
+
+/* بيانات الشركة: كارت زي كارنيه الشغل */
+.co-badge{display:flex;flex-direction:column;gap:10px;border-top:5px solid var(--amb);border-radius:6px 6px 16px 16px}
+.co-name{font-size:30px;line-height:1.2}
+.specs{margin:0;display:flex;flex-direction:column}
+.spec{display:flex;gap:12px;padding:8px 0;border-top:1px dashed var(--line)}
+.spec dt{flex:0 0 98px;color:var(--mut);font-size:13px;padding-top:1px}
+.spec dd{margin:0;flex:1;font-weight:500;line-height:1.5}
+.tl.career .it{display:block;text-decoration:none;color:inherit}
+.tl.career .it.gone::before{background:var(--paper);border-style:dashed;border-color:var(--mut)}
+.tl.career .it.here::before{background:var(--amb);border-color:var(--amb)}
+
+/* اختيار ألوان الليلي */
+.night-pick{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.night-pick button{display:flex;flex-direction:column;align-items:flex-start;gap:3px;padding:8px;border-radius:14px;border:1.5px solid var(--line);background:var(--paper);cursor:pointer;text-align:start}
+.night-pick button.on{border-color:var(--amb);box-shadow:0 0 0 3px var(--amb-soft)}
+.night-pick .sw{width:100%;height:46px;border-radius:9px;display:flex;align-items:flex-end;gap:4px;padding:6px;margin-bottom:3px}
+.night-pick .sw i{display:block;height:12px;border-radius:4px;flex:1}
+.night-pick .sw i:first-child{flex:2;height:22px}
+.night-pick b{font-weight:600;font-size:14px}
+.night-pick .mut{font-size:11px;line-height:1.35}

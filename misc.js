@@ -27,6 +27,10 @@ async function problemSheet(p = {}) {
   if (p.id) fillLinks(sheetEl());
 }
 
+// ألوان الليلي: [المفتاح، الاسم، وصف، [الخلفية، الكارت، اللون المميز، الكلام]]
+const NIGHTS = [['workshop', 'الورشة', 'كحلي ولمبة كهرمان', ['#10161F', '#18202C', '#F5B83D', '#EEE8DC']],
+  ['copper', 'النحاس', 'جرافيت دافي ونحاس', ['#17130F', '#1F1A15', '#E8955A', '#F2EAE0']],
+  ['green', 'الأخضر', 'الألوان القديمة', ['#13221F', '#1A2C28', '#F5B32E', '#E7EFE9']]];
 const ARCH_TABLES = [['tasks', 'title', 'مهمة'], ['goals', 'title', 'هدف'], ['ideas', 'title', 'فكرة'], ['problems', 'title', 'مشكلة'], ['team_members', 'name', 'فرد'], ['company_metrics', 'label', 'مؤشر'], ['company_log', 'text', 'تطور'], ['projects', 'name', 'مشروع'], ['project_devs', 'title', 'تطوير في مشروع'], ['project_clients', 'name', 'عميل مشروع'], ['courses', 'title', 'كورس'], ['sops', 'title', 'إجراء'], ['positions', 'title', 'مكان فاضي'], ['candidates', 'name', 'متقدم'], ['recurring_tasks', 'title', 'مهمة متكررة'], ['habits', 'title', 'عادة'], ['life_tracks', 'name', 'مسار'], ['life_areas', 'name', 'مجال'], ['media', 'title', 'كتاب أو بودكاست'], ['decisions', 'title', 'قرار'], ['lessons', 'text', 'درس'], ['occasions', 'title', 'مناسبة']];
 
 // ---------- النسخة الاحتياطية ----------
@@ -177,7 +181,9 @@ export default {
         html: `<div class="stack">
           ${standalone ? '' : `<div class="card" style="background:var(--amb);border-color:var(--amb);color:#15202B;line-height:1.7"><b>عشان التطبيق يتسطب والتذكيرات توصلك</b><br>افتحه من Safari، دوس زرار المشاركة، وبعدين "إضافة إلى الشاشة الرئيسية"، وافتحه من الأيقونة.</div>`}
           <div class="card"><b style="font-weight:600">الشكل</b>
-            <div class="seg" style="margin-top:8px">${[['system', 'زي الموبايل'], ['light', 'فاتح'], ['dark', 'ليلي']].map(([k, l]) => `<button class="${t === k ? 'on' : ''}" data-act="theme" data-v="${k}">${l}</button>`).join('')}</div></div>
+            <div class="seg" style="margin-top:8px">${[['system', 'زي الموبايل'], ['light', 'فاتح'], ['dark', 'ليلي']].map(([k, l]) => `<button class="${t === k ? 'on' : ''}" data-act="theme" data-v="${k}">${l}</button>`).join('')}</div>
+            ${t === 'light' ? '' : `<div class="mut" style="margin:12px 0 6px">ألوان الليلي</div><div class="night-pick">${NIGHTS.map(([k, l, sub, c]) => `<button class="${(p?.night_palette || 'workshop') === k ? 'on' : ''}" data-act="night" data-v="${k}" aria-pressed="${(p?.night_palette || 'workshop') === k}">
+              <span class="sw" style="background:${c[0]}"><i style="background:${c[1]}"></i><i style="background:${c[2]}"></i><i style="background:${c[3]}"></i></span><b>${l}</b><span class="mut">${sub}</span></button>`).join('')}</div>`}</div>
           <div class="card list"><b style="font-weight:600;display:block;padding-bottom:4px">التذكيرات</b>
             ${row('الإشعارات على الموبايل', pushState === 'on' ? 'شغالة على الموبايل ده' : pushState === 'denied' ? 'مقفولة من إعدادات الآيفون: الإعدادات ← الإشعارات ← نوتة بلال' : pushState === 'unsupported' ? 'افتح التطبيق من أيقونة الشاشة الرئيسية الأول' : 'لسه مش متفعلة', pushState === 'on' ? (WORKER_URL ? '<button class="btn sm" data-act="push-test">جرّب</button>' : '') : pushState === 'unsupported' || pushState === 'denied' ? '' : '<button class="btn sm amb" data-act="push-enable">فعّل</button>')}
             ${row('ملخص الصبح', `<div class="mut" style="font-size:13px">مهامك، والمتأخر، والكورسات، والقرارات اللي محتاجة مراجعة، والمناسبات القريبة</div><div class="row" style="gap:6px;margin-top:4px"><input type="time" class="inp" style="width:auto;min-height:36px" value="${(p?.morning_reminder || '08:30').slice(0, 5)}" data-change="pref-time" data-k="morning_reminder">${pushState === 'on' && WORKER_URL ? '<button class="btn sm" data-act="push-test" data-morning="1">ابعته دلوقتي</button>' : ''}</div>`, sw(p?.morning_enabled, 'data-act="pref" data-k="morning_enabled"'))}
@@ -197,6 +203,7 @@ export default {
       };
     },
     actions: {
+      async night(el) { try { window.__applyNight(el.dataset.v); const s = await auth.session(); await upsert('profiles', { user_id: s.user.id, night_palette: el.dataset.v }, 'user_id'); doRefresh(); } catch (e) { fail(e); } },
       async theme(el) { try { const s = await auth.session(); await upsert('profiles', { user_id: s.user.id, theme: el.dataset.v }, 'user_id'); window.__applyTheme(el.dataset.v); doRefresh(); } catch (e) { fail(e); } },
       async pref(el) { try { const s = await auth.session(); await upsert('profiles', { user_id: s.user.id, [el.dataset.k]: !el.classList.contains('on') }, 'user_id'); doRefresh(); } catch (e) { fail(e); } },
       async 'pref-time'(el) { try { const s = await auth.session(); await upsert('profiles', { user_id: s.user.id, [el.dataset.k]: el.value }, 'user_id'); toast('اتحفظ'); } catch (e) { fail(e); } },

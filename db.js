@@ -9,9 +9,11 @@ export const sb = configured
   ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false } })
   : null;
 
-const TABLES = ['profiles','company','company_metrics','company_log','ideas','goals','plan_steps','recurring_tasks','tasks','links','problems','role_criteria','team_members','member_ratings','member_notes','weekly_reviews','courses','org_units','sops','job_roles','positions','candidates','projects','project_clients','project_devs','project_dev_notes','wallets','assets','investments','investment_returns','debts','debt_payments','commitments','budget_categories','expenses','incomes','financial_goals','net_worth_snapshots','push_subscriptions','day_logs','day_plans','habits','habit_logs','life_tracks','life_areas','departments','waiting_for','owner_points','inbox','templates','day_journal','media','learnings','decisions','lessons','occasions','life_scores','dreams'];
-const ARCH = new Set(['company_metrics','company_log','ideas','goals','recurring_tasks','tasks','problems','team_members','courses','sops','positions','candidates','projects','project_clients','project_devs','wallets','assets','investments','debts','commitments','budget_categories','expenses','incomes','financial_goals','day_logs','habits','life_tracks','life_areas','departments','waiting_for','owner_points','inbox','templates','media','learnings','decisions','lessons','occasions','dreams']);
+const TABLES = ['profiles','company','company_metrics','company_log','ideas','goals','plan_steps','recurring_tasks','tasks','links','problems','role_criteria','team_members','member_ratings','member_notes','weekly_reviews','courses','org_units','sops','job_roles','positions','candidates','projects','project_clients','project_devs','project_dev_notes','wallets','assets','investments','investment_returns','debts','debt_payments','commitments','budget_categories','expenses','incomes','financial_goals','net_worth_snapshots','push_subscriptions','day_logs','day_plans','habits','habit_logs','life_tracks','life_areas','departments','waiting_for','owner_points','inbox','templates','day_journal','media','learnings','decisions','lessons','occasions','life_scores','dreams','companies'];
+const ARCH = new Set(['company_metrics','company_log','ideas','goals','recurring_tasks','tasks','problems','team_members','courses','sops','positions','candidates','projects','project_clients','project_devs','wallets','assets','investments','debts','commitments','budget_categories','expenses','incomes','financial_goals','day_logs','habits','life_tracks','life_areas','departments','waiting_for','owner_points','inbox','templates','media','learnings','decisions','lessons','occasions','dreams','companies']);
 const KEY = { profiles: 'user_id', company: 'user_id' };
+// الجداول اللي بتاعة الشركة: كل شركة ليها تيم وهيكل وأرقام وسجل لوحدها، وبنعرض بتوع الشركة الحالية بس
+const CO = new Set(['team_members','departments','role_criteria','company_metrics','company_log','org_units','job_roles','positions','candidates','sops']);
 const NO_UPDATED = new Set(['links','member_notes','project_dev_notes','investment_returns','debt_payments','expenses','incomes','net_worth_snapshots','push_subscriptions','role_criteria','budget_categories','habit_logs']);
 const todayStr = () => { const d = new Date(); return new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10); };
 const DEFAULTS = {
@@ -31,7 +33,7 @@ const DEFAULTS = {
   life_tracks: () => ({ sort: 0 }), life_areas: () => ({ sort: 0 }), departments: () => ({ sort: 0 }),
   waiting_for: () => ({ done: false }), owner_points: () => ({ status: 'open' }), templates: () => ({ items: [] }),
   media: () => ({ kind: 'book', status: 'active', current_page: 0, current_minutes: 0 }), learnings: () => ({ status: 'new' }),
-  decisions: () => ({ decided_on: todayStr() }), lessons: () => ({ source: 'other' }), occasions: () => ({ yearly: true, remind_days: 2 }), dreams: () => ({ year: Number(todayStr().slice(0, 4)) }),
+  decisions: () => ({ decided_on: todayStr() }), companies: () => ({}), lessons: () => ({ source: 'other' }), occasions: () => ({ yearly: true, remind_days: 2 }), dreams: () => ({ year: Number(todayStr().slice(0, 4)) }),
 };
 
 // ---------------- التخزين على الجهاز (IndexedDB) ----------------
@@ -122,19 +124,19 @@ function view(name) {
     ...view('v_debts').filter(d => d.direction === 'owe' && d.remaining > 0 && d.due_day).map(d => ({ kind: 'installment', ref_id: d.id, title: d.person, on_date: nextDue(d.due_day), amount: d.installment_amount })),
   ];
   if (name === 'v_search') {
-    const M = Object.fromEntries(T('team_members').map(m => [m.id, m.name]));
+    const M = Object.fromEntries(T('team_members').map(m => [m.id, m.name])), CA = r => !T('companies').length || inCo(r);
     return [
       ...T('tasks').filter(A).map(r => ({ kind: 'task', id: r.id, title: r.title, body: null, meta: r.due_on })),
       ...T('goals').filter(A).map(r => ({ kind: 'goal', id: r.id, title: r.title, body: r.why, meta: r.status })),
       ...T('ideas').filter(A).map(r => ({ kind: 'idea', id: r.id, title: r.title, body: r.body, meta: r.stage })),
       ...T('problems').filter(A).map(r => ({ kind: 'problem', id: r.id, title: r.title, body: `${r.cause || ''} ${r.solution || ''}`, meta: r.status })),
-      ...T('team_members').filter(A).map(r => ({ kind: 'member', id: r.id, title: r.name, body: r.strengths, meta: r.role })),
+      ...T('team_members').filter(r => A(r) && CA(r)).map(r => ({ kind: 'member', id: r.id, title: r.name, body: r.strengths, meta: r.role })),
       ...T('member_notes').map(r => ({ kind: 'member_note', id: r.id, title: M[r.member_id], body: r.text, meta: r.noted_on })),
       ...T('projects').filter(A).map(r => ({ kind: 'project', id: r.id, title: r.name, body: r.description, meta: r.kind })),
       ...T('project_devs').filter(A).map(r => ({ kind: 'project_dev', id: r.id, title: r.title, body: r.details, meta: r.stage })),
       ...T('courses').filter(A).map(r => ({ kind: 'course', id: r.id, title: r.title, body: r.learned, meta: r.status })),
-      ...T('sops').filter(A).map(r => ({ kind: 'sop', id: r.id, title: r.title, body: r.body, meta: String(r.version) })),
-      ...T('company_log').filter(A).map(r => ({ kind: 'log', id: r.id, title: r.text, body: null, meta: r.happened_on })),
+      ...T('sops').filter(r => A(r) && CA(r)).map(r => ({ kind: 'sop', id: r.id, title: r.title, body: r.body, meta: String(r.version) })),
+      ...T('company_log').filter(r => A(r) && CA(r)).map(r => ({ kind: 'log', id: r.id, title: r.text, body: null, meta: r.happened_on })),
       ...T('decisions').filter(A).map(r => ({ kind: 'decision', id: r.id, title: r.title, body: [r.why, r.expected, r.result].filter(Boolean).join(' '), meta: r.decided_on })),
       ...T('dreams').filter(A).map(r => ({ kind: 'dream', id: r.id, title: r.title, body: r.why, meta: String(r.year) })),
       ...T('lessons').filter(A).map(r => ({ kind: 'lesson', id: r.id, title: r.text, body: null, meta: r.source })),
@@ -144,9 +146,21 @@ function view(name) {
   return T(name);
 }
 
+// ---------------- الشركة الحالية ----------------
+const companiesAll = () => T('companies').filter(A).sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+export function currentCompanyId() {
+  const all = companiesAll(), want = T('profiles')[0]?.current_company_id;
+  if (want && all.some(c => c.id === want)) return want;
+  return (all.find(c => !c.left_on) || {}).id || null;
+}
+export const currentCompany = () => Promise.resolve(clone(companiesAll().find(c => c.id === currentCompanyId()) || null));
+// حاجة من غير شركة (قبل ملف SQL الدفعة 5) = تبع أول شركة (Fix Team)
+const inCo = r => { const cur = currentCompanyId(); return r.company_id ? r.company_id === cur : !!cur && cur === (companiesAll()[0] || {}).id; };
+
 export function list(table, o = {}) {
   let rows = view(table);
   const f = [];
+  if (CO.has(table) && T('companies').length && !o.allCompanies) f.push(inCo);
   for (const [k, v] of Object.entries(o.eq || {})) f.push(v === null ? r => (r[k] ?? null) === null : r => r[k] === v);
   if (o.neq) f.push(r => r[o.neq[0]] !== o.neq[1]);
   if (o.in) f.push(r => o.in[1].includes(r[o.in[0]]));
@@ -180,6 +194,7 @@ function makeRow(table, obj) {
 function queue(op) { outbox.push(op); writeSeq++; persist(); emit('status'); kickPush(); }
 
 export function ins(table, obj) {
+  if (CO.has(table) && obj.company_id === undefined && currentCompanyId()) obj = { ...obj, company_id: currentCompanyId() };
   const row = makeRow(table, obj);
   T(table).push(row); triggers(table, null, row);
   queue({ op: 'insert', table, data: { ...obj, ...(KEY[table] ? {} : { id: row.id }) } });
@@ -219,7 +234,7 @@ export const archive = (table, id) => upd(table, id, { archived_at: new Date().t
 export const unarchive = (table, id) => upd(table, id, { archived_at: null });
 
 // نفس اللي Supabase بيعمله لوحده، بيتعمل على الجهاز عشان تشوفه على طول (وبيتبدل بنسخة Supabase بعد المزامنة)
-function tmp(table, obj) { const r = makeRow(table, obj); r._tmp = true; T(table).push(r); return r; }
+function tmp(table, obj) { if (CO.has(table) && currentCompanyId()) obj = { company_id: currentCompanyId(), ...obj }; const r = makeRow(table, obj); r._tmp = true; T(table).push(r); return r; }
 function triggers(table, old, r) {
   if (table === 'tasks' && (!old || old.done !== r.done)) r.done_at = r.done ? new Date().toISOString() : null;
   if (table === 'team_members' && old && old.active !== r.active) r.left_on = r.active ? null : (r.left_on || todayStr());

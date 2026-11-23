@@ -1,5 +1,5 @@
 // نوتة بلال — الهيكل الأساسي: الدخول، التنقل، الشريط اللي تحت، القائمة
-import { sb, configured, auth, single, rpc, upd, upsert, openLocal, pull, startSync, onSync, syncStatus } from './db.js';
+import { sb, configured, auth, single, rpc, upd, upsert, ins, openLocal, pull, startSync, onSync, syncStatus } from './db.js';
 import { esc, ic, closeSheet, toast, fail, formOf, lockScroll, unlockScroll } from './ui.js';
 import { setRefresh, taskActions, stepActions, linkActions, captureActions, openCapture, fillLinks } from './comps.js';
 import today from './today.js';
@@ -23,9 +23,10 @@ import { learnGlobal } from './learn.js';
 import lessons, { lessonGlobal } from './lessons.js';
 import dreams, { dreamGlobal } from './dreams.js';
 import numbers from './numbers.js';
+import companies, { companyGlobal, bioHtml } from './companies.js';
 
-const SCREENS = { ...today, ...goals, ...team, ...company, ...misc, ...projects, ...money, ...more, ...review, ...insights, ...habits, ...compare, ...life, ...lessons, ...dreams, ...numbers };
-const GLOBAL = { ...goalGlobal, ...teamGlobal, ...projectGlobal, ...moneyGlobal, ...moreGlobal, ...insightGlobal, ...habitGlobal, ...lifeGlobal, ...peopleGlobal, ...inboxGlobal, ...tplGlobal, ...learnGlobal, ...lessonGlobal, ...dreamGlobal, ...taskActions, ...stepActions, ...linkActions, ...captureActions,
+const SCREENS = { ...today, ...goals, ...team, ...company, ...misc, ...projects, ...money, ...more, ...review, ...insights, ...habits, ...compare, ...life, ...lessons, ...dreams, ...numbers, ...companies };
+const GLOBAL = { ...goalGlobal, ...teamGlobal, ...projectGlobal, ...moneyGlobal, ...moreGlobal, ...insightGlobal, ...habitGlobal, ...lifeGlobal, ...peopleGlobal, ...inboxGlobal, ...tplGlobal, ...learnGlobal, ...lessonGlobal, ...dreamGlobal, ...companyGlobal, ...taskActions, ...stepActions, ...linkActions, ...captureActions,
   'close-sheet': closeSheet, capture: openCapture, menu: openMenu, 'close-menu': closeMenu,
   'nav-back'() { const top = navStack[navStack.length - 1]; location.hash = top ? top.hash : '#/today'; } };
 
@@ -66,7 +67,10 @@ function renderTop(v) {
   const back = prev
     ? `<button class="rb" data-act="nav-back" aria-label="ارجع لـ ${esc(prev.title)}" style="width:auto;max-width:36%;padding:0 10px 0 12px;gap:4px">${ic('back', 18)}<span style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(prev.title)}</span></button>`
     : v.back ? `<a href="${v.back}" class="rb" aria-label="رجوع">${ic('back')}</a>` : '';
-  $('#top').innerHTML = `<button class="rb" data-act="menu" aria-label="القائمة">${ic('menu')}</button><div class="t">${v.sub ? `<div class="s">${esc(v.sub)}</div>` : ''}<h1${(v.title || '').length > 14 ? ' class="long"' : ''}>${esc(v.title || '')}</h1></div>
+  // titleHref: العنوان نفسه زرار (زي اسم الشركة بيفتح بياناتها)
+  const go = v.titleHref ? `<span class="tgo" aria-hidden="true">${ic('chev', 12)}</span>` : '';
+  const head = `${v.sub || go ? `<div class="s">${esc(v.sub || '')}${go}</div>` : ''}<h1${(v.title || '').length > 14 ? ' class="long"' : ''}>${esc(v.title || '')}</h1>`;
+  $('#top').innerHTML = `<button class="rb" data-act="menu" aria-label="القائمة">${ic('menu')}</button>${v.titleHref ? `<a class="t tlink" href="${v.titleHref}" aria-label="${esc(v.title || '')}: افتح البيانات">${head}</a>` : `<div class="t">${head}</div>`}
     ${v.right || ''}${v.noSearch ? '' : `<a href="#/search" class="rb" aria-label="بحث">${ic('search', 21)}</a>`}${back}`;
 }
 
@@ -184,15 +188,19 @@ window.addEventListener('hashchange', e => {
 });
 
 // ---------- القائمة الجانبية ----------
-function openMenu() {
+async function openMenu() {
   closeMenu();
+  let bio = '<div class="bio"><span class="disp bio-name">نوتة بلال</span></div>';
+  try { bio = await bioHtml(); } catch (e) { console.error(e); }
+  if (document.getElementById('drawer')) return;
   const d = document.createElement('div');
   d.className = 'drawer'; d.id = 'drawer';
   const item = (href, icon, label, meta = '', soon = false) => soon
     ? `<a class="soon" aria-disabled="true">${ic(icon, 21)}<span>${label}</span><span class="mut">في المرحلة الجاية</span></a>`
     : `<a href="${href}">${ic(icon, 21)}<span>${label}</span>${meta ? `<span class="mut">${meta}</span>` : ''}</a>`;
   d.innerHTML = `<div class="back" data-act="close-menu"></div><nav class="panel" aria-label="القائمة">
-    <div style="padding:22px 20px 14px;border-bottom:1px dashed var(--line)"><div class="disp" style="font-size:26px">نوتة بلال</div><div class="mut">Fix Team</div></div>
+    ${bio}
+    <div class="home">${item('#/today', 'home', 'القايمة الرئيسية')}</div>
     <div class="gh">حياتي</div>${item('#/life', 'star', 'حياتي', 'المسارات والمجالات')}${item('#/habits', 'repeat', 'عاداتي')}${item('#/courses', 'book', 'تعلّمي', 'كورسات وكتب وبودكاست')}${item('#/dreams', 'goal', 'خطة سنتي', 'الحلم والأهداف')}${item('#/numbers', 'chart', 'أرقامي', 'السنة والشهور')}
     <div class="gh">الشغل</div>${item('#/problems', 'alert', 'سجل المشاكل')}${item('#/lessons', 'check', 'الدروس والقرارات')}${item('#/structure', 'tree', 'الهيكل والنظام')}${item('#/hiring', 'user', 'التوظيف')}
     <div class="gh">متابعة</div>${item('#/day', 'clock', 'يومي', 'وقتي ونسبي')}${item('#/weekly', 'review', 'المراجعات الأسبوعية')}${item('#/recurring', 'repeat', 'مهام جاهزة', 'متكررة وقوالب')}${item('#/calendar', 'cal', 'التقويم')}
@@ -205,6 +213,8 @@ function openMenu() {
   lockScroll();
 }
 function closeMenu() { const d = document.getElementById('drawer'); if (!d) return; d.remove(); unlockScroll(); }
+window.__closeMenu = closeMenu;
+window.__clearViews = () => viewCache.clear();
 
 // ---------- الدخول ----------
 function authScreen() {
@@ -243,9 +253,11 @@ function welcome(company) {
   f.onsubmit = async e => {
     e.preventDefault(); const v = formOf(f);
     try {
-      await upsert('company', { name: v.name || 'Fix Team', branches: v.branches || null, status_text: v.status_text || null }, 'user_id');
+      const row = { name: v.name || 'Fix Team', branches: v.branches || null, status_text: v.status_text || null };
+      await upsert('company', row, 'user_id');
       const s = await auth.session();
-      await upsert('profiles', { user_id: s.user.id, onboarded: true }, 'user_id');
+      let coId = null; try { coId = (await ins('companies', { ...row, my_title: 'مطور أعمال' })).id; } catch (e) {}
+      await upsert('profiles', { user_id: s.user.id, onboarded: true, ...(coId ? { current_company_id: coId } : {}) }, 'user_id');
       location.hash = '#/today'; await render(); setTimeout(prefetchTabs, 600);
     } catch (err) { fail(err); }
   };
@@ -268,7 +280,7 @@ async function start() {
     }
     let prof = await single('profiles');
     if (!prof && navigator.onLine) { await rpc('seed_my_defaults'); prof = await single('profiles'); }
-    applyTheme(prof?.theme);
+    applyTheme(prof?.theme); applyNight(prof?.night_palette);
     if (!syncing) { syncing = true; startSync(); }
     if (!prof?.onboarded) return welcome(await single('company'));
     rpc('spawn_recurring').catch(() => {});
@@ -302,6 +314,15 @@ export function applyTheme(t = 'system') {
   if (t === 'system') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = t;
 }
 window.__applyTheme = applyTheme;
+// ألوان الليلي: الورشة (الافتراضي)، النحاس، الأخضر القديم
+const NIGHT_BG = { workshop: '#10161F', copper: '#17130F', green: '#13221F' };
+export function applyNight(n = 'workshop') {
+  if (!NIGHT_BG[n]) n = 'workshop';
+  try { localStorage.setItem('nota.night', n); } catch (e) {}
+  if (n === 'workshop') delete document.documentElement.dataset.night; else document.documentElement.dataset.night = n;
+  document.querySelectorAll('meta[name=theme-color][media*=dark]').forEach(m => m.setAttribute('content', NIGHT_BG[n]));
+}
+window.__applyNight = applyNight;
 
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
 if (sb) auth.onChange(s => { if (!s && navigator.onLine) authScreen(); });

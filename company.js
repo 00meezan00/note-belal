@@ -1,5 +1,5 @@
 // الشركة: الوضع الحالي، المؤشرات، سجل التطورات
-import { list, single, ins, upd, upsert } from './db.js';
+import { list, single, ins, upd, upsert, currentCompany } from './db.js';
 import { esc, ic, fd, fMonth, today, n, empty, openSheet, closeSheet, sheetEl, formOf, toast, fail } from './ui.js';
 import { archiveWithUndo, doRefresh } from './comps.js';
 
@@ -8,8 +8,18 @@ export default {
     dock: 'company',
     async render() {
       const [c, metrics, log, team, done, active, prog] = await Promise.all([
-        single('company'), list('company_metrics', { order: 'sort' }), list('company_log', { order: 'happened_on', asc: false, limit: 120 }),
+        currentCompany(), list('company_metrics', { order: 'sort' }), list('company_log', { order: 'happened_on', asc: false, limit: 120 }),
         list('team_members', { eq: { active: true } }), list('goals', { eq: { status: 'done' } }), list('goals', { eq: { status: 'active' } }), list('v_goal_progress')]);
+      const cos = await list('companies');
+      // مفيش شركة شغال فيها دلوقتي (استقلت من كله)
+      if (cos.length && !c) return {
+        title: 'الشركة', sub: 'مش شغال في شركة دلوقتي', titleHref: '#/companies',
+        html: `<div class="stack"><div class="card stack" style="text-align:center;padding:26px 18px"><div style="margin:0 auto;color:var(--mut)">${ic('co', 34)}</div>
+          <div class="disp" style="font-size:22px">مفيش شركة مفتوحة</div><div class="mut" style="font-size:14px;line-height:1.7">ضيف الشركة اللي هتشتغل فيها، وهيبقى ليها تيم وهيكل وأرقام جديدة.</div>
+          <button class="btn pri" data-act="co-new">${ic('plus', 18)}ضيف شركة</button><a class="btn" href="#/companies">شركاتي القديمة</a></div></div>`,
+      };
+      const old = !cos.length ? await single('company') : null;   // قبل ملف SQL الدفعة 5
+      const co = c || old;
       const P = Object.fromEntries(prog.map(p => [p.id, p.progress]));
       const avg = active.length ? Math.round(active.reduce((s, g) => s + (P[g.id] || 0), 0) / active.length) : 0;
       let cur = '', tl = '';
@@ -21,11 +31,12 @@ export default {
       });
       if (cur) tl += '</div>';
       return {
-        title: c?.name || 'الشركة', sub: c?.branches || '',
+        title: co?.name || 'الشركة', sub: co?.branches || (cos.length ? 'دوس على الاسم تشوف بياناتها' : ''), titleHref: cos.length ? '#/companies' : null,
         html: `<div class="stack">
+          ${c?.left_on ? `<a class="card row" href="#/companies/${c.id}" style="gap:10px;border-style:dashed">${ic('door', 20)}<div style="flex:1;line-height:1.5"><b style="font-weight:600">استقلت من الشركة دي ${fd(c.left_on)}</b><div class="mut">دي بياناتها القديمة. تقدر تفتح شركة تانية من "شركاتي".</div></div>${ic('chev', 18)}</a>` : ''}
           <a class="card row" href="#/progress" style="gap:12px;background:var(--dock);border-color:var(--dock);color:#fff">${ic('chart', 24)}<div style="flex:1;line-height:1.45"><div style="font-weight:600">تقدّم الشركة</div><div style="font-size:13px;color:#C9D2D9">${active.length ? `ماشيين ناحية أهدافنا <b class="num" style="color:#fff">${avg}%</b> · ${active.length} هدف شغال` : 'روحنا فين وقدامنا قد إيه'}</div></div>${ic('chev', 18)}</a>
           <div class="card"><div class="between"><span class="sec" style="margin:0">الوضع الحالي</span><button class="btn sm" data-act="co-edit">تعديل</button></div>
-            <div style="margin-top:6px;line-height:1.75;white-space:pre-wrap">${c?.status_text ? esc(c.status_text) : '<span class="mut">اكتب صورة الشركة النهاردة: الأجهزة، العملاء، الفريق.</span>'}</div></div>
+            <div style="margin-top:6px;line-height:1.75;white-space:pre-wrap">${co?.status_text ? esc(co.status_text) : '<span class="mut">اكتب صورة الشركة النهاردة: الأجهزة، العملاء، الفريق.</span>'}</div></div>
           <div class="between"><span class="sec">المؤشرات</span><button class="btn sm" data-act="metric-new">${ic('plus', 16)}مؤشر</button></div>
           <div class="grid2">
             ${metrics.map(m => `<button class="card" style="padding:12px" data-act="metric-open" data-id="${m.id}"><div class="num" style="font-size:26px;line-height:1.2">${n(m.value)}</div><div class="mut">${esc(m.label)}${m.unit ? ' · ' + esc(m.unit) : ''}</div></button>`).join('')}
@@ -39,15 +50,19 @@ export default {
     },
     actions: {
       async 'co-edit'() {
-        const c = await single('company') || {};
-        openSheet('بيانات الشركة', `<label class="field"><span>الاسم</span><input name="name" value="${esc(c.name || 'Fix Team')}"></label>
+        const c = await currentCompany() || await single('company') || {};
+        openSheet('الوضع الحالي', `<label class="field"><span>الاسم</span><input name="name" value="${esc(c.name || '')}"></label>
           <label class="field"><span>الفروع</span><input name="branches" value="${esc(c.branches)}"></label>
-          <label class="field"><span>الوضع الحالي</span><textarea name="status_text" rows="7" autofocus>${esc(c.status_text)}</textarea></label>
+          <label class="field"><span>الشركة عاملة إزاي النهاردة؟</span><textarea name="status_text" rows="7" autofocus>${esc(c.status_text)}</textarea></label>
           <button class="btn pri" data-act="co-save">حفظ</button>`);
       },
       async 'co-save'() {
         const f = formOf(sheetEl());
-        try { await upsert('company', { name: f.name || 'Fix Team', branches: f.branches || null, status_text: f.status_text || null }, 'user_id'); closeSheet(); doRefresh(); } catch (e) { fail(e); }
+        try {
+          const c = await currentCompany(), row = { name: f.name || c?.name || 'الشركة', branches: f.branches || null, status_text: f.status_text || null };
+          if (c) await upd('companies', c.id, row); else await upsert('company', row, 'user_id');
+          window.__clearViews && window.__clearViews(); closeSheet(); doRefresh();
+        } catch (e) { fail(e); }
       },
       'metric-new'() { metricSheet({}); },
       async 'metric-open'(el) { const m = (await list('company_metrics', { eq: { id: el.dataset.id } }))[0]; m && metricSheet(m); },

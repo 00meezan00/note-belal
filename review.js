@@ -1,5 +1,5 @@
 // المراجعة الأسبوعية، التقويم، التقرير للمالك
-import { list, single, ins, upd, upsert } from './db.js';
+import { list, single, ins, upd, upsert, currentCompany } from './db.js';
 import { esc, ic, fd, fMonth, today, addDays, weekStart, monthStart, n, empty, toast, fail, formOf, LOC } from './ui.js';
 import { doRefresh, openTask, archiveWithUndo } from './comps.js';
 import { link } from './db.js';
@@ -74,7 +74,7 @@ async function buildReport() {
   const [from, to] = period();
   const inR = d => d && d.slice(0, 10) >= from && d.slice(0, 10) <= to;
   const [co, metrics, log, goals, prog, members, ratings, crit, problems, ideas, positions] = await Promise.all([
-    single('company'), list('company_metrics', { order: 'sort' }), list('company_log', { gte: ['happened_on', from], lte: ['happened_on', to], order: 'happened_on' }),
+    currentCompany().then(c => c || single('company')), list('company_metrics', { order: 'sort' }), list('company_log', { gte: ['happened_on', from], lte: ['happened_on', to], order: 'happened_on' }),
     list('goals', { order: 'due_on' }), list('v_goal_progress'), list('team_members', { eq: { active: true }, order: 'name' }),
     list('member_ratings', { eq: { month: to.slice(0, 7) + '-01' } }), list('role_criteria'), list('problems'), list('ideas', { eq: { stage: 'ready' } }), list('positions', { eq: { status: 'open' } })]);
   const P = Object.fromEntries(prog.map(p => [p.id, p.progress]));
