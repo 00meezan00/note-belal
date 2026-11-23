@@ -25,9 +25,10 @@ import dreams, { dreamGlobal } from './dreams.js';
 import numbers from './numbers.js';
 import companies, { companyGlobal, bioHtml } from './companies.js';
 import player from './player.js';
+import notesPage, { notesGlobal } from './notes.js';
 
-const SCREENS = { ...today, ...goals, ...team, ...company, ...misc, ...projects, ...money, ...more, ...review, ...insights, ...habits, ...compare, ...life, ...lessons, ...dreams, ...numbers, ...companies, ...player };
-const GLOBAL = { ...goalGlobal, ...teamGlobal, ...projectGlobal, ...moneyGlobal, ...moreGlobal, ...insightGlobal, ...habitGlobal, ...lifeGlobal, ...peopleGlobal, ...inboxGlobal, ...tplGlobal, ...learnGlobal, ...lessonGlobal, ...dreamGlobal, ...companyGlobal, ...taskActions, ...stepActions, ...linkActions, ...captureActions,
+const SCREENS = { ...today, ...goals, ...team, ...company, ...misc, ...projects, ...money, ...more, ...review, ...insights, ...habits, ...compare, ...life, ...lessons, ...dreams, ...numbers, ...companies, ...player, ...notesPage };
+const GLOBAL = { ...goalGlobal, ...teamGlobal, ...projectGlobal, ...moneyGlobal, ...moreGlobal, ...insightGlobal, ...habitGlobal, ...lifeGlobal, ...peopleGlobal, ...inboxGlobal, ...tplGlobal, ...learnGlobal, ...lessonGlobal, ...dreamGlobal, ...companyGlobal, ...notesGlobal, ...taskActions, ...stepActions, ...linkActions, ...captureActions,
   'close-sheet': closeSheet, capture: openCapture, menu: openMenu, 'close-menu': closeMenu,
   'nav-back'() { const top = navStack[navStack.length - 1]; location.hash = top ? top.hash : '#/today'; } };
 

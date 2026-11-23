@@ -114,6 +114,7 @@ async function mediaSheet(m = {}) {
     <label class="field"><span>الاسم</span><input name="title" value="${esc(m.title)}" ${m.id ? '' : 'autofocus'} placeholder="مثلًا: العادات الذرية"></label>
     <label class="field"><span>الكاتب أو المقدّم (اختياري)</span><input name="author" value="${esc(m.author)}"></label>
     ${linkField(m.url, kind === 'book')}
+    ${m.id ? `<a class="btn sm" href="#/notes/m_${m.id}" style="align-self:flex-start;text-decoration:none">${ic('edit', 16)}الدفتر</a>` : ''}
     <div class="field"><span>الحالة</span>${pills('mstat', MSTAT, m.status || 'active')}</div>
     <div class="grid2" data-for="book" ${kind === 'book' ? '' : 'hidden'}><label class="field"><span>عدد صفحات الكتاب</span><input name="total_pages" inputmode="numeric" value="${m.total_pages ?? ''}"></label>
       <label class="field"><span>إنت في صفحة كام؟</span><input name="current_page" inputmode="numeric" value="${m.current_page ?? 0}"></label></div>

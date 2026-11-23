@@ -96,7 +96,7 @@ async function courseSheet(c = {}) {
   openSheet(c.id ? 'الكورس' : 'كورس جديد', `
     <label class="field"><span>اسم الكورس</span><input name="title" value="${esc(c.title)}" ${c.id ? '' : 'autofocus'} placeholder="مثلًا: الإدارة المالية"></label>
     ${linkField(c.url)}
-    ${c.id ? watchLink('course', c.id, c.url) : ''}
+    ${c.id ? `<div class="row" style="gap:8px;flex-wrap:wrap">${watchLink('course', c.id, c.url)}<a class="btn sm" href="#/notes/c_${c.id}" style="text-decoration:none">${ic('edit', 16)}الدفتر</a></div>` : ''}
     <div class="grid2">${durField('total_minutes', 'مدة الكورس كلها', c.total_minutes, 'مثلًا 12:30')}${durField('current_minutes', 'اتفرجت قد إيه؟', c.current_minutes, 'مثلًا 3:15')}</div>
     <div class="field"><span>الحالة</span>${pills('cstat', CSTAT, c.status || 'active')}</div>
     ${taPicker(d, c.id ? taValue(c) : dev ? 't:' + dev.id : '')}
