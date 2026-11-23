@@ -7,6 +7,7 @@
 //   VAPID_PUBLIC          المفتاح العام للإشعارات
 //   VAPID_PRIVATE         المفتاح الخاص للإشعارات — Secret
 //   VAPID_SUBJECT         mailto:إيميلك
+//   YOUTUBE_KEY           مفتاح YouTube Data API (اختياري) — عشان "هات المدة" يشتغل مع يوتيوب — Secret
 
 export default {
   async scheduled(event, env, ctx) { ctx.waitUntil(runReminders(env)); },
@@ -39,7 +40,7 @@ export default {
         const u = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, { headers: { apikey: env.SUPABASE_SERVICE_KEY, Authorization: `Bearer ${token}` } });
         if (!u.ok) return json({ error: 'لازم تكون داخل على النوتة' }, 401);
         const { url: link } = await req.json();
-        return json(await linkDuration(String(link || '').trim()));
+        return json(await linkDuration(String(link || '').trim(), env));
       } catch (e) { return json({ error: 'ما قدرتش أفتح اللينك: ' + String(e && e.message || e).slice(0, 120) }, 500); }
     }
     if (url.pathname === '/test' && req.method === 'POST') {
@@ -407,6 +408,7 @@ const result = (secs, title, extra = {}) => secs > 0 ? { minutes: Math.max(1, Ma
 
 async function getText(u) {
   const r = await fetch(u, { headers: UA, redirect: 'follow', cf: { cacheTtl: 3600 } });
+  if (r.status === 429 || r.status === 403) throw new Error(/youtu/.test(u) ? 'يوتيوب رافض يفتح لـ Cloudflare. حط مفتاح YOUTUBE_KEY في الـ Worker' : 'الموقع رافض يفتح لـ Cloudflare (' + r.status + ')');
   if (!r.ok) throw new Error('الموقع رجّع ' + r.status);
   return { text: (await r.text()).slice(0, 6_000_000), type: r.headers.get('content-type') || '' };
 }
@@ -426,12 +428,55 @@ function ytPlaylistFrom(h) {
   const total = +((/"numVideosText":\{"runs":\[\{"text":"([\d,]+)"/.exec(h) || /"stats":\[\{"runs":\[\{"text":"([\d,]+)"/.exec(h) || [])[1] || '0').replace(/,/g, '');
   return { secs, count: seen.size, total: total || seen.size };
 }
-async function youtube(u) {
-  const list = u.searchParams.get('list');
+// الباب الرسمي بتاع يوتيوب (YouTube Data API): مجاني، ومحتاج مفتاح YOUTUBE_KEY في الـ Worker
+async function ytApi(env, path) {
+  const r = await fetch(`https://www.googleapis.com/youtube/v3/${path}&key=${encodeURIComponent(env.YOUTUBE_KEY)}`);
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error('مفتاح يوتيوب: ' + ((j.error && j.error.message) || r.status));
+  return j;
+}
+async function youtubeApi(env, v, list) {
+  if (list) {
+    const ids = []; let page = '', total = 0;
+    for (let i = 0; i < 8; i++) {   // لحد 400 فيديو (الخطة المجانية بتسمح بـ 50 طلب في المرة)
+      const j = await ytApi(env, `playlistItems?part=contentDetails&maxResults=50&playlistId=${encodeURIComponent(list)}${page ? '&pageToken=' + page : ''}`);
+      total = (j.pageInfo && j.pageInfo.totalResults) || total;
+      ids.push(...(j.items || []).map(x => x.contentDetails && x.contentDetails.videoId).filter(Boolean));
+      if (!j.nextPageToken) break; page = j.nextPageToken;
+    }
+    let secs = 0;
+    for (let i = 0; i < ids.length; i += 50) {
+      const j = await ytApi(env, `videos?part=contentDetails&id=${ids.slice(i, i + 50).join(',')}`);
+      for (const x of j.items || []) secs += isoSecs(x.contentDetails.duration) || 0;
+    }
+    const t = await ytApi(env, `playlists?part=snippet&id=${encodeURIComponent(list)}`).catch(() => ({}));
+    const title = t.items && t.items[0] ? t.items[0].snippet.title : null;
+    if (secs) return result(secs, title, { count: total || ids.length, partial: total > ids.length, source: 'قايمة يوتيوب' });
+    if (!v) return null;
+  }
+  if (!v) return null;
+  const j = await ytApi(env, `videos?part=contentDetails,snippet&id=${v}`);
+  const x = (j.items || [])[0];
+  return x ? result(isoSecs(x.contentDetails.duration), x.snippet.title, { source: 'فيديو يوتيوب' }) : null;
+}
+// من غير مفتاح: بنجرب الطريقة اللي تطبيق يوتيوب نفسه بيستخدمها (ساعات بتنجح)
+async function youtubePlayer(v) {
+  const r = await fetch('https://www.youtube.com/youtubei/v1/player?prettyPrint=false', { method: 'POST', headers: { ...UA, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ videoId: v, context: { client: { clientName: 'WEB', clientVersion: '2.20241120.01.00', hl: 'en' } } }) });
+  if (!r.ok) return null;
+  const j = await r.json().catch(() => ({}));
+  const d = j.videoDetails || {};
+  return result(+d.lengthSeconds, d.title || null, { source: 'فيديو يوتيوب' });
+}
+async function youtube(u, env) {
+  let list = u.searchParams.get('list');
   let v = u.searchParams.get('v');
   if (u.hostname.endsWith('youtu.be')) v = u.pathname.slice(1, 12);
   const sm = /^\/(?:shorts|live|embed)\/([\w-]{11})/.exec(u.pathname); if (sm) v = sm[1];
-  if (list && !/^(RD|UL|LL|WL)/.test(list)) {
+  if (list && /^(RD|UL|LL|WL)/.test(list)) list = null;   // دي قوايم يوتيوب العشوائية، مش كورس
+  if (env && env.YOUTUBE_KEY) return youtubeApi(env, v, list);
+  if (v && !list) { const p = await youtubePlayer(v).catch(() => null); if (p) return p; }
+  if (list) {
     const { text } = await getText(`https://www.youtube.com/playlist?list=${encodeURIComponent(list)}&hl=en`);
     const p = ytPlaylistFrom(text);
     if (p.secs) return result(p.secs, titleOf(text), { count: p.total, partial: p.total > p.count, source: 'قايمة يوتيوب' });
@@ -481,12 +526,12 @@ function pageFrom(h) {
   return null;
 }
 
-async function linkDuration(link) {
+async function linkDuration(link, env) {
   if (/^[a-z][\w+.-]*:/i.test(link) && !/^https?:\/\//i.test(link)) return { error: 'اللينك مش مظبوط' };
   let u; try { u = new URL(/^https?:\/\//i.test(link) ? link : 'https://' + link); } catch (_) { return { error: 'اللينك مش مظبوط' }; }
   if (!/^https?:$/.test(u.protocol)) return { error: 'اللينك مش مظبوط' };
   const host = u.hostname.replace(/^www\.|^m\.|^music\./, '');
-  if (/(^|\.)youtube\.com$|(^|\.)youtu\.be$/.test(host)) return (await youtube(u)) || { error: 'ملقيتش مدة الفيديو. اكتبها بإيدك' };
+  if (/(^|\.)youtube\.com$|(^|\.)youtu\.be$/.test(host)) return (await youtube(u, env)) || { error: 'ملقيتش مدة الفيديو. اكتبها بإيدك' };
   const { text, type } = await getText(u.href);
   if (/xml|rss/i.test(type) || /^\s*<\?xml|<rss[\s>]/i.test(text.slice(0, 500))) {
     const r = rssFrom(text);
