@@ -5,7 +5,7 @@ import { linksSlot, fillLinks, archiveWithUndo, doRefresh } from './comps.js';
 import { lifeData, taPicker, taRow, taValue, trackByName } from './life.js';
 import { deptData } from './people.js';
 import { tplBody } from './templates.js';
-import { learnBlock, spendBlock, applyCards, mediaView, durField, linkField, openLink, parseHM, durWords } from './learn.js';
+import { learnBlock, spendBlock, applyCards, mediaView, durField, linkField, openLink, watchLink, parseHM, durWords } from './learn.js';
 
 const st = { learn: 'courses', course: 'active', org: 'depts', hire: '', rec: 'rec' };
 const CSTAT = [['active', 'شغال فيها'], ['done', 'خلصت'], ['wishlist', 'عايز آخدها']];
@@ -96,6 +96,7 @@ async function courseSheet(c = {}) {
   openSheet(c.id ? 'الكورس' : 'كورس جديد', `
     <label class="field"><span>اسم الكورس</span><input name="title" value="${esc(c.title)}" ${c.id ? '' : 'autofocus'} placeholder="مثلًا: الإدارة المالية"></label>
     ${linkField(c.url)}
+    ${c.id ? watchLink('course', c.id, c.url) : ''}
     <div class="grid2">${durField('total_minutes', 'مدة الكورس كلها', c.total_minutes, 'مثلًا 12:30')}${durField('current_minutes', 'اتفرجت قد إيه؟', c.current_minutes, 'مثلًا 3:15')}</div>
     <div class="field"><span>الحالة</span>${pills('cstat', CSTAT, c.status || 'active')}</div>
     ${taPicker(d, c.id ? taValue(c) : dev ? 't:' + dev.id : '')}
@@ -244,7 +245,7 @@ export default {
               ${c.status === 'active' && (c.schedule || []).length ? `<div class="mut">${slotsText(c.schedule)}</div>` : ''}
               ${c.status !== 'wishlist' ? bat(p, c.status === 'done' ? 'done' : 'run') : ''}
               ${c.learned ? `<div class="mut" style="line-height:1.6">اتعلمت: <span style="color:var(--ink)">${esc(c.learned)}</span></div>` : ''}
-              ${c.applied_in ? `<span class="chip" style="align-self:flex-start">${ic('link', 13)}طبقته في: ${esc(c.applied_in)}</span>` : (c.status === 'done' ? '<span class="late" style="font-size:13px">لسه ما اتطبقش في الشغل</span>' : '')}</div>${openLink(c.url)}${lateBox(c, lt)}</div>`; }).join('')
+              ${c.applied_in ? `<span class="chip" style="align-self:flex-start">${ic('link', 13)}طبقته في: ${esc(c.applied_in)}</span>` : (c.status === 'done' ? '<span class="late" style="font-size:13px">لسه ما اتطبقش في الشغل</span>' : '')}</div>${watchLink('course', c.id, c.url, c.watch?.last ? 'كمّل من حيث وقفت' : '')}${lateBox(c, lt)}</div>`; }).join('')
             : empty(st.course === 'active' ? 'سجّل الكورسات اللي بتاخدها، ومواعيدها، وكام درس خلصت، وطبقت إيه منها.' : 'مفيش حاجة هنا لسه.')}</div>`,
       };
     },

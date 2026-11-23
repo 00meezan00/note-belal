@@ -43,6 +43,20 @@ export const linkField = (url, hidden = false) => `<div class="field"><span>ال
   <div class="row" style="gap:6px"><input name="url" type="url" inputmode="url" autocomplete="off" value="${esc(url)}" placeholder="الصق اللينك هنا" data-change="dur-fetch" style="flex:1;min-width:0">
   <button type="button" class="btn sm" data-act="dur-fetch" data-for="audio" ${hidden ? 'hidden' : ''}>${ic('clock', 16)}هات المدة</button></div>
   <small class="mut" id="dur-msg">${url ? '' : 'لما تلزق لينك، هجيب مدته وأكتبها لوحدها'}</small></div>`;
+// لينك يوتيوب؟ بيرجع رقم الفيديو و/أو القايمة
+export function ytOf(url) {
+  if (!url) return null;
+  let u; try { u = new URL(/^https?:\/\//i.test(url) ? url : 'https://' + url); } catch (e) { return null; }
+  const h = u.hostname.replace(/^(www|m|music)\./, '');
+  if (!/^(youtube\.com|youtu\.be|youtube-nocookie\.com)$/.test(h)) return null;
+  let v = u.searchParams.get('v'), list = u.searchParams.get('list');
+  if (h === 'youtu.be') v = u.pathname.slice(1, 12);
+  const m = /^\/(?:shorts|live|embed)\/([\w-]{11})/.exec(u.pathname); if (m) v = m[1];
+  if (list && /^(RD|UL|LL|WL)/.test(list)) list = null;
+  return v || list ? { v: v || null, list: list || null } : null;
+}
+// زرار "اتفرج في النوتة" لو اللينك يوتيوب، وإلا "افتح اللينك"
+export const watchLink = (kind, id, url, label) => ytOf(url) ? `<a class="btn sm amb" href="#/watch/${kind === 'media' ? 'm' : 'c'}_${id}" style="align-self:flex-start;text-decoration:none">${ic('play', 16)}${label || (kind === 'media' ? 'شغّل في النوتة' : 'اتفرج في النوتة')}</a>` : openLink(url);
 export const openLink = url => url ? `<a class="chip" href="${esc(/^https?:/i.test(url) ? url : 'https://' + url)}" target="_blank" rel="noopener" style="align-self:flex-start;text-decoration:none">${ic('link', 13)}افتح اللينك</a>` : '';
 const longTime = m => { m = Math.round(m || 0); const h = Math.floor(m / 60), r = m % 60; return h ? `${h} س${r ? ` ${r} د` : ''}` : `${r} د`; };
 
@@ -123,7 +137,7 @@ export async function mediaView(status) {
       ${m.author ? `<div class="mut" style="font-size:13px">${esc(m.author)}</div>` : ''}
       ${m.status !== 'wishlist' ? bat(pr.p, m.status === 'done' ? 'done' : 'run') : ''}
       ${pr.text ? `<div class="mut" style="font-size:13px">${pr.text}${m.status === 'done' && m.finished_on ? ' · خلص ' + fd(m.finished_on) : ''}</div>` : ''}</div>
-      ${openLink(m.url)}
+      ${watchLink('media', m.id, m.url)}
       ${m.status === 'active' ? `<label class="row" style="gap:8px"><span class="mut" style="font-size:13px;flex:1">${m.kind === 'book' ? 'وصلت صفحة كام؟' : 'سمعت لحد فين؟ (ساعات:دقايق)'}</span><input class="inp num" inputmode="${m.kind === 'book' ? 'numeric' : 'text'}" style="width:100px;min-height:38px" value="${m.kind === 'book' ? (m.current_page || '') : (m.current_minutes ? hmText(m.current_minutes) : '')}" data-change="media-pos" data-id="${m.id}"></label>` : ''}</div>`; }).join('')
     : empty(status === 'active' ? 'سجّل الكتب اللي بتقراها، والكتب المسموعة والبودكاست اللي بتسمعها، وإنت وصلت فين.' : 'مفيش حاجة هنا لسه.') };
 }

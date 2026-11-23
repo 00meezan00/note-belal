@@ -24,8 +24,9 @@ import lessons, { lessonGlobal } from './lessons.js';
 import dreams, { dreamGlobal } from './dreams.js';
 import numbers from './numbers.js';
 import companies, { companyGlobal, bioHtml } from './companies.js';
+import player from './player.js';
 
-const SCREENS = { ...today, ...goals, ...team, ...company, ...misc, ...projects, ...money, ...more, ...review, ...insights, ...habits, ...compare, ...life, ...lessons, ...dreams, ...numbers, ...companies };
+const SCREENS = { ...today, ...goals, ...team, ...company, ...misc, ...projects, ...money, ...more, ...review, ...insights, ...habits, ...compare, ...life, ...lessons, ...dreams, ...numbers, ...companies, ...player };
 const GLOBAL = { ...goalGlobal, ...teamGlobal, ...projectGlobal, ...moneyGlobal, ...moreGlobal, ...insightGlobal, ...habitGlobal, ...lifeGlobal, ...peopleGlobal, ...inboxGlobal, ...tplGlobal, ...learnGlobal, ...lessonGlobal, ...dreamGlobal, ...companyGlobal, ...taskActions, ...stepActions, ...linkActions, ...captureActions,
   'close-sheet': closeSheet, capture: openCapture, menu: openMenu, 'close-menu': closeMenu,
   'nav-back'() { const top = navStack[navStack.length - 1]; location.hash = top ? top.hash : '#/today'; } };
@@ -114,6 +115,7 @@ function paint(v, screen, dir, animate) {
 async function render({ refresh = false } = {}) {
   const p = parseHash();
   const screen = SCREENS[p.name] || SCREENS.today;
+  if (refresh && screen.keep && current?.screen === screen) return;   // صفحة المشغّل: المزامنة متعيدش رسمها عشان الفيديو ميقفش
   current = { screen, params: p };
   const key = keyOf(), seq = ++renderSeq;
   const d = depthOf(p), dir = refresh ? 'none' : d > lastDepth ? 'forward' : d < lastDepth ? 'back' : 'tab';
