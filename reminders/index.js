@@ -8,6 +8,8 @@
 //   VAPID_PRIVATE         المفتاح الخاص للإشعارات — Secret
 //   VAPID_SUBJECT         mailto:إيميلك
 //   YOUTUBE_KEY           مفتاح YouTube Data API (اختياري) — عشان "هات المدة" يشتغل مع يوتيوب — Secret
+//   GEMINI_KEY            مفتاح Gemini من Google AI Studio (اختياري) — عشان "✦ اسأل" في المشغّل — Secret
+//   GEMINI_MODEL          (اختياري) اسم موديل Gemini لو عايز تغيّره
 
 export default {
   async scheduled(event, env, ctx) { ctx.waitUntil(runReminders(env)); },
@@ -42,6 +44,16 @@ export default {
         const { url: link } = await req.json();
         return json(await linkDuration(String(link || '').trim(), env));
       } catch (e) { return json({ error: 'ما قدرتش أفتح اللينك: ' + String(e && e.message || e).slice(0, 120) }, 500); }
+    }
+    // ✦ اسأل: Gemini بيتفرج على فيديو يوتيوب ويلخّصه أو يجاوب سؤال
+    if (url.pathname === '/ai' && req.method === 'POST') {
+      try {
+        const token = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '');
+        const u = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, { headers: { apikey: env.SUPABASE_SERVICE_KEY, Authorization: `Bearer ${token}` } });
+        if (!u.ok) return json({ error: 'لازم تكون داخل على النوتة' }, 401);
+        if (!env.GEMINI_KEY) return json({ error: 'محتاج مفتاح GEMINI_KEY في الـ Worker (Settings ← Variables and Secrets)' }, 400);
+        return json(await aiRun(env, await req.json()));
+      } catch (e) { return json({ error: 'المساعد مردّش: ' + String(e && e.message || e).slice(0, 200) }, 500); }
     }
     if (url.pathname === '/test' && req.method === 'POST') {
       // أي خطأ هنا بيرجع للتطبيق بسببه، بدل ما الـ Worker يقع ساكت
@@ -541,4 +553,71 @@ async function linkDuration(link, env) {
   }
   const secs = pageFrom(text);
   return result(secs, titleOf(text), { source: host }) || { error: 'الموقع ده مش بيقول المدة، اكتبها بإيدك' };
+}
+
+
+// ======================= ✦ اسأل (Gemini) =======================
+const GEMINI_MODELS = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash'];
+const AI_STYLE = 'إنت مساعد تعليمي جوه تطبيق اسمه "نوتة بلال". اتكلم بالعامية المصرية البسيطة، وخلي الكلام قصير وواضح ومنظم (نقط لو ينفع). لو ذكرت وقت في الفيديو اكتبه كده [دقايق:ثواني] مثلًا [12:30].';
+const secsStr = s => `${Math.max(0, Math.floor(s))}s`;
+const mmssW = s => { s = Math.max(0, Math.floor(s || 0)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60; return h ? `${h}:${String(m).padStart(2, '0')}:${String(x).padStart(2, '0')}` : `${m}:${String(x).padStart(2, '0')}`; };
+
+async function gemini(env, parts, { json: asJson = false, video = false } = {}) {
+  const models = env.GEMINI_MODEL ? [env.GEMINI_MODEL, ...GEMINI_MODELS] : GEMINI_MODELS;
+  let lastErr = '';
+  for (const model of models) {
+    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+      method: 'POST', headers: { 'x-goog-api-key': env.GEMINI_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contents: [{ role: 'user', parts }], generationConfig: { temperature: 0.4, ...(asJson ? { responseMimeType: 'application/json' } : {}), ...(video ? { mediaResolution: 'MEDIA_RESOLUTION_LOW' } : {}) } }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (r.ok) {
+      const text = ((j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) || []).map(p => p.text || '').join('').trim();
+      if (!text) throw new Error(j.promptFeedback && j.promptFeedback.blockReason ? 'Gemini رفض يجاوب على ده' : 'Gemini رجّع رد فاضي');
+      return text;
+    }
+    lastErr = (j.error && j.error.message) || ('Gemini رجّع ' + r.status);
+    if (r.status === 404 || (r.status === 400 && /not found|not supported|unknown name|invalid.*model/i.test(lastErr))) continue;   // الموديل ده مش موجود، نجرب اللي بعده
+    if (r.status === 429) throw new Error('خلصت حصة Gemini المجانية النهاردة (أو طلبات كتير ورا بعض). جرّب بعد شوية');
+    if (/private|unlisted|not accessible|could not.*video|unable to process/i.test(lastErr)) throw new Error('Gemini مقدرش يفتح الفيديو ده (لازم يكون عام على يوتيوب)');
+    throw new Error(lastErr);
+  }
+  throw new Error('مفيش موديل Gemini شغال: ' + lastErr);
+}
+
+async function aiRun(env, b) {
+  const url = String(b.url || '');
+  if (!/^https:\/\/www\.youtube\.com\/watch\?v=[\w-]{11}$/.test(url)) return { error: 'المساعد بيشتغل مع فيديوهات يوتيوب بس' };
+  const title = String(b.title || '').slice(0, 200);
+  if (b.mode === 'digest') {
+    const prompt = `${AI_STYLE}
+اتفرج على الفيديو ده${title ? ` ("${title}")` : ''} كله، ورجّع JSON بس بالشكل ده:
+{"summary": "ملخص الفيديو في 5 لـ 8 سطور بالعامية المصرية",
+ "points": [{"t": الوقت بالثواني (رقم), "text": "أهم نقطة في الجزء ده في سطر"}],
+ "terms": [{"word": "كلمة أو مصطلح صعب اتقال", "meaning": "معناه ببساطة في سياق الفيديو"}],
+ "outline": "شرح مفصّل للفيديو جزء جزء بالترتيب، وقبل كل جزء وقته كده [دقايق:ثواني]. لحد 1200 كلمة"}
+خلي points من 6 لـ 15 نقطة بترتيب الفيديو، و terms لحد 15 كلمة (لو مفيش كلمات صعبة رجّع ليستة فاضية).`;
+    const raw = await gemini(env, [{ fileData: { fileUri: url } }, { text: prompt }], { json: true, video: true });
+    let d; try { d = JSON.parse(raw.replace(/^```(json)?|```$/g, '').trim()); } catch (e) { d = { summary: raw, points: [], terms: [], outline: '' }; }
+    return { summary: String(d.summary || ''), points: (Array.isArray(d.points) ? d.points : []).map(p => ({ t: Number(p.t) || 0, text: String(p.text || '') })), terms: (Array.isArray(d.terms) ? d.terms : []).map(x => ({ word: String(x.word || ''), meaning: String(x.meaning || '') })), outline: String(d.outline || '') };
+  }
+  // سؤال
+  const q = String(b.q || '').slice(0, 1500);
+  if (!q) return { error: 'اكتب السؤال' };
+  const t = Number(b.t) || 0;
+  if (b.deep) {   // بيتفرج على الدقيقتين اللي حوالين مكانك بس
+    const from = Math.max(0, t - 90), to = t + 30;
+    const text = await gemini(env, [{ fileData: { fileUri: url }, videoMetadata: { startOffset: secsStr(from), endOffset: secsStr(to) } }, { text: `${AI_STYLE}\nالمستخدم واقف عند [${mmssW(t)}] في الفيديو${title ? ` "${title}"` : ''}. ${q}` }], { video: true });
+    return { text };
+  }
+  const d = b.digest || {};
+  const ctx = `ملخص الفيديو${title ? ` "${title}"` : ''}:\n${String(d.summary || '').slice(0, 2000)}\n\nأهم النقط:\n${(d.points || []).slice(0, 30).map(p => `[${mmssW(p.t)}] ${p.text}`).join('\n').slice(0, 3000)}\n\nالكلمات الصعبة:\n${(d.terms || []).slice(0, 30).map(x => `${x.word}: ${x.meaning}`).join('\n').slice(0, 2000)}\n\nشرح مفصّل:\n${String(d.outline || '').slice(0, 9000)}`;
+  const hist = (Array.isArray(b.history) ? b.history : []).slice(-6).map(m => `${m.who === 'me' ? 'المستخدم' : 'المساعد'}: ${String(m.text || '').slice(0, 1200)}`).join('\n');
+  const prompt = `${AI_STYLE}
+${ctx}
+
+${hist ? `الكلام اللي فات:\n${hist}\n\n` : ''}المستخدم واقف دلوقتي عند [${mmssW(t)}].
+السؤال: ${q}
+جاوب من الفيديو. لو سأل عن معنى كلمة: اشرح معناها ببساطة وفي سياق الفيديو ومثال قصير. لو الإجابة مش موجودة في الفيديو قول كده في أول سطر، وبعدين جاوب من معلوماتك العامة.`;
+  return { text: await gemini(env, [{ text: prompt }]) };
 }
