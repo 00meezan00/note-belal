@@ -204,7 +204,7 @@ async function openMenu() {
   d.innerHTML = `<div class="back" data-act="close-menu"></div><nav class="panel" aria-label="القائمة">
     ${bio}
     <div class="home">${item('#/today', 'home', 'القايمة الرئيسية')}</div>
-    <div class="gh">حياتي</div>${item('#/life', 'star', 'حياتي', 'المسارات والمجالات')}${item('#/habits', 'repeat', 'عاداتي')}${item('#/courses', 'book', 'تعلّمي', 'كورسات وكتب وبودكاست')}${item('#/dreams', 'goal', 'خطة سنتي', 'الحلم والأهداف')}${item('#/numbers', 'chart', 'أرقامي', 'السنة والشهور')}
+    <div class="gh">حياتي</div>${item('#/life', 'star', 'حياتي', 'المسارات والمجالات')}${item('#/habits', 'repeat', 'عاداتي')}${item('#/courses', 'book', 'تعلّمي', 'كورسات وكتب وبودكاست')}${item('#/notebook', 'edit', 'الدفتر العام', 'كل اللي بتكتبه')}${item('#/dreams', 'goal', 'خطة سنتي', 'الحلم والأهداف')}${item('#/numbers', 'chart', 'أرقامي', 'السنة والشهور')}
     <div class="gh">الشغل</div>${item('#/problems', 'alert', 'سجل المشاكل')}${item('#/lessons', 'check', 'الدروس والقرارات')}${item('#/structure', 'tree', 'الهيكل والنظام')}${item('#/hiring', 'user', 'التوظيف')}
     <div class="gh">متابعة</div>${item('#/day', 'clock', 'يومي', 'وقتي ونسبي')}${item('#/weekly', 'review', 'المراجعات الأسبوعية')}${item('#/recurring', 'repeat', 'مهام جاهزة', 'متكررة وقوالب')}${item('#/calendar', 'cal', 'التقويم')}
     <div class="gh">شغلي الخاص</div>${item('#/projects', 'layers', 'مشاريعي')}${item('#/money', 'wallet', 'فلوسي', 'مقفول')}

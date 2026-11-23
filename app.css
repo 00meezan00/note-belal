@@ -647,3 +647,72 @@ html,body{overscroll-behavior:none}
 .nt-tft .mut{font-size:12px}
 .nt-tft .nt-topen{margin:0;min-height:30px;font-size:12.5px}
 .nt-tpan .nt-dot{width:26px;height:26px}
+.nt-inl{width:max-content;max-width:100%}
+.nt-inl table{min-width:0}
+/* أسهم التنقل في الجدول: مرصوصة جنب بعض */
+.nt-pad{display:inline-flex;flex:none;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--mat)}
+.nt-pad button{border:0!important;border-radius:0!important;min-width:40px;padding:0!important;font-size:17px!important;background:none!important}
+.nt-pad button+button{border-inline-start:1px solid var(--line)!important}
+.nt-pad button:active{background:var(--amb)!important;color:#15202B}
+
+/* ============ الدفعة 9 ============ */
+/* زرار "كل الأدوات" */
+.nt-main .nt-allb{color:var(--amb)}
+.nt-menu .nt-row button .ic{width:17px;height:17px;vertical-align:-3px}
+/* الصور في الدفتر */
+.nt-img{margin:8px 0;outline:none}
+.nt-img figure{margin:0 auto;max-width:100%}
+.nt-img img{display:block;width:100%;height:auto;border-radius:10px;border:1px solid var(--line);background:var(--mat)}
+.nt-img.nt-sel img{box-shadow:0 0 0 3px var(--amb)}
+/* شيت إضافة صورة */
+.nt-ph{position:fixed;inset:0;z-index:45;background:rgba(5,8,12,.55);display:flex;align-items:flex-end;justify-content:center;animation:fade .15s}
+.nt-ph-box{width:100%;max-width:560px;background:var(--paper);border-radius:22px 22px 0 0;padding:14px 14px calc(14px + var(--safe-b));display:flex;flex-direction:column;gap:12px;max-height:92vh;overflow:auto}
+.nt-ph-hd b{font:600 18px "Reem Kufi",system-ui,sans-serif}
+.nt-ph-pv{background:var(--mat);border-radius:14px;padding:10px}
+.nt-ph-paper{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:12px;max-height:46vh;overflow:auto}
+.nt-ph-paper figure{margin:0 auto;transition:width .2s}
+.nt-ph-paper img{display:block;width:100%;border-radius:8px}
+.nt-ph-sz button{flex:1}
+.nt-ph-t{font-size:12.5px}
+.nt-ph-ft{display:flex;gap:8px}
+.nt-ph-ft button{flex:1;min-height:46px;border-radius:13px;border:1px solid var(--line);background:var(--mat);color:var(--ink);font-size:15px;cursor:pointer}
+.nt-ph-ft .nt-ph-ok{background:var(--amb);border-color:var(--amb);color:#15202B;font-weight:600}
+.nt-ph-ft .nt-ph-ok:disabled{opacity:.6}
+/* الجدول: أرقام ومجموع ودمج */
+.nt-numc{text-align:left!important;direction:ltr;font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:.95em}
+.nt-sumr td{background:color-mix(in srgb,var(--amb) 16%,var(--paper))!important;font-weight:600;border-top:1.5px solid var(--amb)!important}
+.nt-sumr td b{font-weight:600}
+.nt-inl td[rowspan],.nt-inl td[colspan],.nt-inl th[colspan],.nt-et td[rowspan],.nt-et td[colspan],.nt-et th[colspan]{vertical-align:middle}
+.nt-tm{display:flex;flex-direction:column;gap:6px;margin-top:6px}
+.nt-tm[hidden]{display:none}
+.nt-tpan .bad{color:var(--bad)}
+.nt-tmb{font-weight:700;letter-spacing:1px}
+/* الخريطة الذهنية بتتعدّل */
+.mm-n{cursor:pointer;font:inherit;text-align:start;color:inherit}
+button.mm-n.on{box-shadow:0 0 0 3px var(--amb)}
+.nt-map-hd{gap:10px}
+.nt-map-tip{flex:1;font-size:12px;font-family:"Readex Pro",system-ui,sans-serif}
+.nt-map-ed{background:var(--paper);border-top:1px solid var(--line);padding:10px 12px calc(10px + var(--safe-b));display:flex;flex-direction:column;gap:8px;box-shadow:0 -8px 20px rgba(0,0,0,.12)}
+.nt-map-ok{background:var(--amb)!important;border-color:var(--amb)!important;color:#15202B!important;font-weight:600}
+/* الدفتر العام */
+.nb{display:flex;flex-direction:column;gap:10px}
+.nb-c{font:500 11px "IBM Plex Mono",monospace;background:var(--mat);color:var(--mut);border-radius:8px;padding:0 6px;margin-inline-start:4px}
+.seg .on .nb-c{background:color-mix(in srgb,var(--paper) 20%,transparent);color:inherit}
+.nb-q{min-height:44px}
+.nb-src{background:var(--paper);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.nb-src+.nb-src{margin-top:8px}
+.nb-src summary{display:grid;grid-template-columns:auto 1fr;grid-template-areas:"k t" "k m";column-gap:10px;align-items:center;padding:12px 14px;cursor:pointer;list-style:none}
+.nb-src summary::-webkit-details-marker{display:none}
+.nb-src summary b{grid-area:t;font-weight:600;line-height:1.4}
+.nb-src summary .mut{grid-area:m;font-size:12px}
+.nb-k{grid-area:k;font-size:11px;font-weight:600;color:var(--amb);background:var(--amb-soft);border-radius:8px;padding:3px 8px;align-self:start;white-space:nowrap}
+.nb-src[open] summary{border-bottom:1px solid var(--line)}
+.nb-body{padding:10px}
+.nb-ro{min-height:0;box-shadow:none;font-size:15px}
+.nb-acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.nb-hit{display:grid;grid-template-columns:auto 1fr;grid-template-areas:"k t" "k x";column-gap:10px;padding:10px 12px;background:var(--paper);border:1px solid var(--line);border-radius:12px;text-decoration:none;color:var(--ink);margin-top:6px}
+.nb-hit b{grid-area:t;font-size:13px;font-weight:600}
+.nb-hit>span:last-child{grid-area:x;font-size:13.5px;line-height:1.6;color:var(--mut)}
+.nb-hit mark{background:var(--nt-hl);color:var(--ink);border-radius:3px}
+.nb-rn{font-size:12px}
+.mm-n.mm-root{color:var(--paper)}

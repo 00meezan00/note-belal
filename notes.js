@@ -6,7 +6,7 @@
 // - 🔗 اربط: السطر يتربط بمهمة، هدف، فكرة، فرد… أي حاجة في السيستم
 // - ☐ مهمة تبقى مهمة في "النهاردة"، و"ده درس" يروح لـ"اتعلمت إيه"
 // - ↶ تراجع ↷ إعادة، فهرس، بحث، طي الأقسام، قالب ملخص، خريطة ذهنية، PDF
-import { one, upd, ins, list, link } from './db.js';
+import { one, upd, ins, list, link, onSync, sb } from './db.js';
 import { esc, ic, toast, today, openSheet, closeSheet } from './ui.js';
 import { KIND, hrefOf } from './comps.js';
 import { printHtml } from './export.js';
@@ -18,6 +18,8 @@ export const NCOLORS = [['', 'من غير لون'], ['red', 'أحمر'], ['orang
 const PRINTC = { red: '#C42B3B', orange: '#C2560C', amber: '#A86E00', green: '#2B7A4B', teal: '#0E7C86', blue: '#2559C4', purple: '#7A3DC4', pink: '#C0337A' };
 const BRANCH = ['blue', 'green', 'purple', 'orange', 'teal', 'pink'];
 const LV = { h1: 1, h2: 2, h3: 3 };
+const NOTXT = ['table', 'hr', 'img'];   // حتت مش كلام (مفيهاش كتابة)
+const IMGW = [[35, 'صغيرة'], [60, 'وسط'], [100, 'بعرض الصفحة']];
 const MAXI = 6, COLW = 130, MINW = 60, MINH = 34;
 const nid = () => Math.random().toString(36).slice(2, 10);
 const mmss = s => { s = Math.max(0, Math.floor(s || 0)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60; return h ? `${h}:${String(m).padStart(2, '0')}:${String(x).padStart(2, '0')}` : `${m}:${String(x).padStart(2, '0')}`; };
@@ -32,6 +34,8 @@ const I = {
   redo: '<path d="M15 7l5 5-5 5"/><path d="M20 12H9a5 5 0 0 0 0 10h3"/>',
   more: '<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>',
   kb: '<rect x="3" y="5" width="18" height="11" rx="2"/><path d="M7 9h1M11 9h1M15 9h1M8 12.5h8M9 19l3 2 3-2"/>',
+  photo: '<rect x="3" y="5" width="18" height="14" rx="2.5"/><circle cx="9" cy="10" r="1.8"/><path d="M21 16l-5-5-8 8"/>',
+  grid: '<rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><path d="M16.75 14v5.5M14 16.75h5.5"/>',
 };
 
 // ---------- النص المنسق (عريض، مائل…) ----------
@@ -82,22 +86,113 @@ function placeCaret(el, pos) {
   if (box.bottom > vh - 90 || box.top < 70) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
 }
 
+// ---------- عمليات الجدول: إضافة/مسح صف أو عمود، الدمج، الترتيب، والمجموع ----------
+// b.mg = الخانات المدموجة [{r, c, rs, cs}]، b.sum = الأعمدة اللي بتتجمع
+export const numOf = v => { const t = String(v ?? '').replace(/[٠-٩]/g, d => d.charCodeAt(0) - 1632).replace(/[۰-۹]/g, d => d.charCodeAt(0) - 1776).replace(/[,،\s]/g, ''); const m = t.match(/-?\d+(\.\d+)?/); return m ? parseFloat(m[0]) : null; };
+const fmtNum = n => n.toLocaleString('en-US', { maximumFractionDigits: 2 });
+const TB = {
+  rowIns(b, k, col = '') { b.rows.splice(k, 0, Array(b.rows[0].length).fill('')); (b.rh ||= []).splice(k, 0, null); (b.rc ||= []).splice(k, 0, col); for (const m of b.mg || []) { if (m.r >= k) m.r++; else if (m.r + m.rs > k) m.rs++; } },
+  rowDel(b, k) {
+    if (b.rows.length <= 1) return false;
+    b.rows.splice(k, 1); (b.rh || []).splice(k, 1); (b.rc || []).splice(k, 1);
+    b.mg = (b.mg || []).filter(m => { if (m.r > k) m.r--; else if (m.r + m.rs > k) m.rs--; return m.rs > 1 || m.cs > 1; });
+    return true;
+  },
+  colIns(b, k) { b.rows.forEach(x => x.splice(k, 0, '')); (b.cw ||= []).splice(k, 0, COLW); for (const m of b.mg || []) { if (m.c >= k) m.c++; else if (m.c + m.cs > k) m.cs++; } b.sum = (b.sum || []).map(c => c >= k ? c + 1 : c); },
+  colDel(b, k) {
+    if (b.rows[0].length <= 1) return false;
+    b.rows.forEach(x => x.splice(k, 1)); (b.cw || []).splice(k, 1);
+    b.mg = (b.mg || []).filter(m => { if (m.c > k) m.c--; else if (m.c + m.cs > k) m.cs--; return m.rs > 1 || m.cs > 1; });
+    b.sum = (b.sum || []).filter(c => c !== k).map(c => c > k ? c - 1 : c);
+    return true;
+  },
+  own(b) { const o = {}; for (const m of b.mg || []) for (let r = m.r; r < m.r + m.rs; r++) for (let c = m.c; c < m.c + m.cs; c++) o[`${r},${c}`] = m; return o; },
+  owner(b, r, c) { const m = (b.mg || []).find(m => r >= m.r && r < m.r + m.rs && c >= m.c && c < m.c + m.cs); return m ? [m.r, m.c] : [r, c]; },
+  // ادمج الخانة مع اللي جنبها (h) أو اللي تحتها (v). الكلام اللي في الخانات بيتجمع في الأولى
+  merge(b, r, c, dir) {
+    const R = b.rows, nr = R.length, nc = R[0].length; [r, c] = TB.owner(b, r, c);
+    const m0 = (b.mg || []).find(m => m.r === r && m.c === c) || { r, c, rs: 1, cs: 1 };
+    const n = { ...m0 }; if (dir === 'h') n.cs++; else n.rs++;
+    if (n.c + n.cs > nc || n.r + n.rs > nr) return 'مفيش خانة ' + (dir === 'h' ? 'جنبها' : 'تحتها');
+    const inside = m => m.r >= n.r && m.c >= n.c && m.r + m.rs <= n.r + n.rs && m.c + m.cs <= n.c + n.cs;
+    const hits = m => m.r < n.r + n.rs && n.r < m.r + m.rs && m.c < n.c + n.cs && n.c < m.c + m.cs;
+    if ((b.mg || []).some(m => m !== m0 && hits(m) && !inside(m))) return 'فيه خانات مدموجة في الطريق، افصلها الأول';
+    const txt = [];
+    for (let i = n.r; i < n.r + n.rs; i++) for (let j = n.c; j < n.c + n.cs; j++) { if ((R[i][j] || '').trim()) txt.push(R[i][j].trim()); if (i !== n.r || j !== n.c) R[i][j] = ''; }
+    R[n.r][n.c] = txt.join(' ');
+    b.mg = (b.mg || []).filter(m => m !== m0 && !inside(m)); b.mg.push(n);
+    return null;
+  },
+  split(b, r, c) { const k = (b.mg || []).findIndex(m => r >= m.r && r < m.r + m.rs && c >= m.c && c < m.c + m.cs); if (k < 0) return 'الخانة دي مش مدموجة'; b.mg.splice(k, 1); return null; },
+  // رتّب الصفوف (من غير صف العناوين) حسب العمود ده. الأرقام بتترتب كأرقام
+  sort(b, c, desc) {
+    if ((b.mg || []).length) return 'افصل الخانات المدموجة الأول عشان الترتيب';
+    const rows = b.rows.slice(1).map((x, i) => ({ x, h: (b.rh || [])[i + 1] ?? null, k: (b.rc || [])[i + 1] || '' }));
+    rows.sort((p, q) => {
+      const a = (p.x[c] || '').trim(), z = (q.x[c] || '').trim();
+      if (!a !== !z) return a ? -1 : 1;   // الفاضي آخر حاجة دايمًا
+      const na = numOf(a), nz = numOf(z), d = na != null && nz != null ? na - nz : a.localeCompare(z, 'ar');
+      return desc ? -d : d;
+    });
+    b.rows = [b.rows[0], ...rows.map(o => o.x)]; b.rh = [(b.rh || [])[0] ?? null, ...rows.map(o => o.h)]; b.rc = [(b.rc || [])[0] || '', ...rows.map(o => o.k)];
+    return null;
+  },
+  sum(b, c) { const S = new Set(b.sum || []); S.has(c) ? S.delete(c) : S.add(c); b.sum = [...S].sort((p, q) => p - q); },
+  total(b, c) { return b.rows.slice(1).reduce((n, x) => n + (numOf(x[c]) || 0), 0); },
+};
+
+// دمج 3 نسخ: الأصل اللي بدأنا منه، ونسخة الجهاز التاني، ونسختك. لو نفس السطر اتعدّل في الاتنين: نسختك بتكسب
+export function mergeBlocks(base, theirs, mine) {
+  const S = x => JSON.stringify(x), bm = new Map(base.map(b => [b.id, b])), mm = new Map(mine.map(b => [b.id, b])), tm = new Map(theirs.map(b => [b.id, b]));
+  const out = [];
+  for (const t of theirs) {
+    const b = bm.get(t.id), m = mm.get(t.id);
+    if (m) out.push(b && S(m) === S(b) ? t : m);          // اتعدّل عندك = نسختك، متعدّلش = نسختهم
+    else if (!b) out.push(t);                              // جديد عندهم
+    else if (S(t) !== S(b)) out.push(t);                   // إنت مسحته بس هم عدّلوه: نسيبه
+  }
+  // اللي إنت ضفته أو اللي هم مسحوه وإنت عدّلته: نحطه بعد السطر اللي كان قبله عندك
+  mine.forEach((m, i) => {
+    if (out.some(x => x.id === m.id)) return;
+    const b = bm.get(m.id); if (b && !tm.has(m.id) && S(b) === S(m)) return;   // هم مسحوه وإنت متعدّلتهوش: يتمسح
+    let at = 0; for (let k = i - 1; k >= 0; k--) { const j = out.findIndex(x => x.id === mine[k].id); if (j >= 0) { at = j + 1; break; } }
+    out.splice(at, 0, m);
+  });
+  return out.length ? out : mine;
+}
+
 let ACTIVE = null;   // الدفتر المفتوح دلوقتي (عشان شيت "اربط" يوصله)
 
 // host = المكان اللي الدفتر هيتحط فيه. now() = الوقت في الفيديو، seek(t, v) = روح للحظة دي
 export async function mountNotes(host, { table, id, now, seek, label }) {
-  const owner = table === 'media' ? 'media' : 'course';
+  const owner = table === 'media' ? 'media' : table === 'courses' ? 'course' : null;   // الدفتر العام مش تبع كورس
   const row = await one(table, id);
   let B = row?.notes?.blocks?.length ? JSON.parse(JSON.stringify(row.notes.blocks)) : [{ id: nid(), type: 'h1', text: '', indent: 0 }];
   let FS = Number(row?.notes?.fs) || 16;
   let cur = B[0].id, cell = null, saveT = null, dirty = false, fork = null, panel = '', visible = true, dead = false;
   let TASKS = {};
+  let base = JSON.parse(JSON.stringify(B)), stamp = row?.notes?.updated_at || null;   // آخر نسخة متحفظة (للدمج)
   const loadTasks = async () => { const ids = B.filter(b => b.task).map(b => b.task); if (!ids.length) return; TASKS = Object.fromEntries((await list('tasks', { in: ['id', ids] })).map(t => [t.id, t])); };
   await loadTasks();
 
   // ---------- تراجع / إعادة ----------
-  let hist = [JSON.stringify(B)], hi = 0, histT = null;
-  const remember = () => { clearTimeout(histT); histT = null; const s = JSON.stringify(B); if (s === hist[hi]) return; hist = hist.slice(0, hi + 1); hist.push(s); if (hist.length > 100) hist.shift(); hi = hist.length - 1; paintUndo(); };
+  // الخطوات بتتحفظ على الموبايل نفسه، فلو قفلت التطبيق ورجعت تقدر ترجّع برضه
+  const HK = `nota.hist.${table}.${id}`;
+  let hist = null, hi = 0, histT = null, keepT = null;
+  try {
+    const h = JSON.parse(localStorage.getItem(HK) || 'null');
+    if (h && Array.isArray(h.s) && h.s.length) { hist = h.s; hi = Math.max(0, Math.min(h.i, hist.length - 1)); const now0 = JSON.stringify(B); if (hist[hi] !== now0) { hist = hist.slice(0, hi + 1); hist.push(now0); hi = hist.length - 1; } }
+  } catch (e) { hist = null; }
+  if (!hist) { hist = [JSON.stringify(B)]; hi = 0; }
+  const keepHist = () => {
+    clearTimeout(keepT);
+    keepT = setTimeout(() => {
+      while (hist.length > 2 && hist.reduce((n, x) => n + x.length, 0) > 1.2e6) { hist.shift(); hi = Math.max(0, hi - 1); }
+      try { localStorage.setItem(HK, JSON.stringify({ s: hist, i: hi })); }
+      catch (e) { try { const k = Math.max(0, hist.length - 8); localStorage.setItem(HK, JSON.stringify({ s: hist.slice(k), i: Math.max(0, hi - k) })); } catch (_) {} }
+    }, 300);
+  };
+  const remember = () => { clearTimeout(histT); histT = null; const s = JSON.stringify(B); if (s === hist[hi]) return; hist = hist.slice(0, hi + 1); hist.push(s); if (hist.length > 100) hist.shift(); hi = hist.length - 1; paintUndo(); keepHist(); };
   const rememberSoon = () => { clearTimeout(histT); histT = setTimeout(remember, 700); };
 
   host.innerHTML = `<div class="nt"><div class="nt-doc" style="--ntfs:${FS}px"></div>
@@ -118,14 +213,15 @@ export async function mountNotes(host, { table, id, now, seek, label }) {
       <div class="nt-row"><span class="mut nt-plab">حجم الخط</span><button type="button" data-a="fs" data-d="-1" aria-label="صغّر الخط">أ−</button><span class="nt-fsv">${FS}</span><button type="button" data-a="fs" data-d="1" aria-label="كبّر الخط">أ+</button></div>
     </div>
     <div class="nt-pan nt-menu" data-p="more" hidden>
+      <div class="nt-mg"><span class="nt-mgl">ضيف</span><div class="nt-row">
+        <button type="button" data-a="panel" data-p="grid">${svg(I.table)} جدول</button><button type="button" data-a="fork">${svg(I.fork)} فرع</button><button type="button" data-a="link">${ic('link', 18)} اربط</button><button type="button" data-a="hr">➖ خط فاصل</button><button type="button" data-a="tpl">🧩 قالب ملخص</button></div></div>
       <div class="nt-mg"><span class="nt-mgl">السطر ده</span><div class="nt-row">
         <button type="button" data-a="tasknow">☑️ مهمة النهاردة</button><button type="button" data-a="lesson">📘 درس اتعلمته</button>
         <button type="button" data-a="up" aria-label="طلّع السطر">↑</button><button type="button" data-a="down" aria-label="نزّل السطر">↓</button><button type="button" data-a="del" class="bad">امسح السطر</button><button type="button" data-a="delsec" class="bad">امسح القسم كله</button></div></div>
-      <div class="nt-mg"><span class="nt-mgl">ضيف</span><div class="nt-row">
-        <button type="button" data-a="hr">➖ خط فاصل</button><button type="button" data-a="tpl">🧩 قالب ملخص كورس</button></div></div>
+
       <div class="nt-mg"><span class="nt-mgl">الدفتر</span><div class="nt-row">
         <button type="button" data-a="panel" data-p="toc">📑 الفهرس</button><button type="button" data-a="panel" data-p="find">🔎 دوّر</button>
-        <button type="button" data-a="foldall">🗂 اطوي الأقسام</button><button type="button" data-a="map">🧠 خريطة</button><button type="button" data-a="pdf">📄 PDF</button></div></div>
+        <button type="button" data-a="foldall">🗂 اطوي الأقسام</button><button type="button" data-a="map">🧠 خريطة</button><button type="button" data-a="pdf">📄 PDF</button><button type="button" data-a="docx">📝 Word</button></div></div>
     </div>
     <div class="nt-pan nt-gpan" data-p="grid" hidden>
       <div class="nt-gsz"><b class="nt-glab">اسحب صباعك على المربعات</b><span class="mut">أول صف هيبقى العناوين</span></div>
@@ -133,18 +229,20 @@ export async function mountNotes(host, { table, id, now, seek, label }) {
       <button type="button" class="nt-gok" data-a="mktable" data-r="3" data-c="3" disabled>اختار المقاس الأول</button>
     </div>
     <div class="nt-pan" data-p="toc" hidden><div class="nt-toc"></div></div>
-    <div class="nt-pan nt-tpan" data-p="table" hidden><div class="nt-row"><button type="button" data-a="row+">+ صف</button><button type="button" data-a="col+">+ عمود</button><button type="button" data-a="row-">− صف</button><button type="button" data-a="col-">− عمود</button><span class="nt-sep"></span>${dots('color', '')}</div></div>
+    <div class="nt-pan nt-tpan" data-p="table" hidden><div class="nt-row"><span class="nt-pad"><button type="button" data-a="go" data-d="r" aria-label="الخانة اللي على اليمين">→</button><button type="button" data-a="go" data-d="u" aria-label="الخانة اللي فوق">↑</button><button type="button" data-a="go" data-d="d" aria-label="الخانة اللي تحت">↓</button><button type="button" data-a="go" data-d="l" aria-label="الخانة اللي على الشمال">←</button></span><span class="nt-sep"></span><button type="button" data-a="row+">+ صف</button><button type="button" data-a="col+">+ عمود</button><button type="button" data-a="tmore" class="nt-tmb" aria-label="أدوات الجدول">⋯</button></div>
+      <div class="nt-tm" hidden><div class="nt-row"><button type="button" data-a="mh">⇠ ادمج مع اللي جنبها</button><button type="button" data-a="mv">⇣ ادمج مع اللي تحتها</button><button type="button" data-a="split">افصل</button><button type="button" data-a="sum">Σ اجمع العمود</button></div>
+      <div class="nt-row"><button type="button" data-a="sortA">رتّب ↑</button><button type="button" data-a="sortD">رتّب ↓</button><button type="button" data-a="row-" class="bad">− صف</button><button type="button" data-a="col-" class="bad">− عمود</button><button type="button" data-a="topen" data-bid="">⤢ كبّر</button></div>
+      <div class="nt-row nt-dots"><span class="mut nt-plab">لون الصف</span>${dots('color', '')}</div></div></div>
+    <div class="nt-pan" data-p="img" hidden><div class="nt-row"><span class="mut nt-plab">الصورة</span>${IMGW.map(([w, l]) => `<button type="button" data-a="imgw" data-w="${w}">${l}</button>`).join('')}<span class="nt-sep"></span><button type="button" data-a="del" class="bad">امسحها</button></div></div>
     <div class="nt-pan" data-p="find" hidden><div class="nt-row"><input class="inp nt-q" placeholder="دوّر على كلمة…" enterkeyhint="search"><span class="mut nt-qn"></span><button type="button" data-a="qprev" aria-label="اللي قبله">↑</button><button type="button" data-a="qnext" aria-label="اللي بعده">↓</button></div></div>
     <div class="nt-main">
       <button type="button" data-a="panel" data-p="fmt" aria-label="شكل الكلام"><span class="nt-aa" dir="ltr">Aa</span></button>
       <button type="button" data-t="todo" aria-label="مهام">${svg(I.todo)}</button>
-      <button type="button" data-a="panel" data-p="grid" aria-label="جدول">${svg(I.table)}</button>
-      <button type="button" data-a="fork" aria-label="فرع">${svg(I.fork)}</button>
-      <button type="button" data-a="link" aria-label="اربط بحاجة في السيستم">${ic('link', 21)}</button>
+      <button type="button" data-a="photo" aria-label="ضيف صورة">${svg(I.photo)}</button>
       ${now ? `<button type="button" data-a="time" class="nt-time" aria-label="وقت الفيديو دلوقتي">${ic('clock', 21)}</button>` : ''}
       <button type="button" data-a="undo" aria-label="تراجع">${svg(I.undo)}</button>
       <button type="button" data-a="redo" aria-label="إعادة">${svg(I.redo)}</button>
-      <button type="button" data-a="panel" data-p="more" aria-label="أدوات أكتر">${svg(I.more)}</button>
+      <button type="button" data-a="panel" data-p="more" class="nt-allb" aria-label="كل الأدوات">${svg(I.grid)}</button>
       <button type="button" data-a="kb" class="nt-kb" aria-label="اقفل الكيبورد">${svg(I.kb)}</button>
     </div></div>`;
   document.body.appendChild(dock);
@@ -160,13 +258,19 @@ export async function mountNotes(host, { table, id, now, seek, label }) {
     const R = b.rows, nc = R[0].length;
     b.cw = Array.from({ length: nc }, (_, i) => (b.cw || [])[i] || COLW);
     // في الدفتر: الجدول بيتكتب فيه على طول زي أي سطر (والشاشة مبتتغيرش). "⤢ كبّر" بيفتحه على الشاشة كلها لو عايز
+    const own = TB.own(b), S = new Set(b.sum || []), lab = [...Array(nc).keys()].find(k => !S.has(k));
+    const span = (ri, ci) => { const m = own[`${ri},${ci}`]; if (!m) return ''; if (m.r !== ri || m.c !== ci) return null; return `${m.rs > 1 ? ` rowspan="${m.rs}"` : ''}${m.cs > 1 ? ` colspan="${m.cs}"` : ''}`; };
+    const cellsOf = (r, ri, minW) => r.map((x, ci) => { const sp = span(ri, ci); if (sp === null) return ''; const tg = ri ? 'td' : 'th'; return `<${tg} contenteditable="true" data-r="${ri}" data-c="${ci}"${sp}${S.has(ci) && ri ? ' class="nt-numc"' : ''}${minW ? ` style="min-width:${Math.max(70, Math.min(b.cw[ci], 220))}px"` : ''}>${esc(x)}</${tg}>`; }).join('');
+    const sumRow = lead => S.size ? `<tr class="nt-sumr">${lead}${b.cw.map((_, ci) => `<td class="${S.has(ci) ? 'nt-numc' : ''}" data-sc="${ci}">${S.has(ci) ? `<b>${fmtNum(TB.total(b, ci))}</b>` : ci === lab ? 'المجموع' : ''}</td>`).join('')}</tr>` : '';
+    // في الدفتر: الجدول بيتكتب فيه على طول زي أي سطر (والشاشة مبتتغيرش). "⤢ كبّر" بيفتحه على الشاشة كلها لو عايز
     if (!ed) return `<div class="nt-tw nt-inl"><table><tbody>
-      ${R.map((r, ri) => `<tr class="${(b.rc || [])[ri] ? 'nt-c-' + b.rc[ri] : ''}">${r.map((x, ci) => `<${ri ? 'td' : 'th'} contenteditable="true" data-r="${ri}" data-c="${ci}" style="min-width:${Math.max(70, Math.min(b.cw[ci], 220))}px">${esc(x)}</${ri ? 'td' : 'th'}>`).join('')}</tr>`).join('')}
+      ${R.map((r, ri) => `<tr class="${(b.rc || [])[ri] ? 'nt-c-' + b.rc[ri] : ''}">${cellsOf(r, ri, true)}</tr>`).join('')}${sumRow('')}
       </tbody></table></div><div class="nt-tft" contenteditable="false"><span class="mut">${R.length} صف · ${nc} عمود</span><button type="button" class="nt-topen" data-a="topen" data-bid="${b.id}">⤢ كبّر الجدول</button></div>`;
     const W = 30 + b.cw.reduce((s, w) => s + w, 0);
     return `<table class="nt-et" style="width:${W}px;--tw:${W}px"><colgroup><col style="width:30px">${b.cw.map(w => `<col style="width:${w}px">`).join('')}</colgroup>
-      <tr class="nt-hrow"><td class="nt-rh nt-corner"></td>${b.cw.map((_, ci) => `<td class="nt-ch"><span class="nt-cl">${ci + 1}</span><span class="nt-cgrip" data-cg="${ci}" aria-hidden="true"></span></td>`).join('')}</tr>
-      ${R.map((r, ri) => { const h = (b.rh || [])[ri], c = (b.rc || [])[ri]; return `<tr class="nt-row-t${c ? ' nt-c-' + c : ''}"${h ? ` style="height:${h}px"` : ''}><td class="nt-rh"><span class="nt-rl">${ri ? ri : '★'}</span><span class="nt-rgrip" data-rg="${ri}" aria-hidden="true"></span></td>${r.map((x, ci) => { const tg = ri === 0 ? 'th' : 'td'; return `<${tg} contenteditable="true" data-r="${ri}" data-c="${ci}">${esc(x)}</${tg}>`; }).join('')}</tr>`; }).join('')}
+      <tr class="nt-hrow"><td class="nt-rh nt-corner"></td>${b.cw.map((_, ci) => `<td class="nt-ch"><span class="nt-cl">${S.has(ci) ? 'Σ ' : ''}${ci + 1}</span><span class="nt-cgrip" data-cg="${ci}" aria-hidden="true"></span></td>`).join('')}</tr>
+      ${R.map((r, ri) => { const h = (b.rh || [])[ri], c = (b.rc || [])[ri]; return `<tr class="nt-row-t${c ? ' nt-c-' + c : ''}"${h ? ` style="height:${h}px"` : ''}><td class="nt-rh"><span class="nt-rl">${ri ? ri : '★'}</span><span class="nt-rgrip" data-rg="${ri}" aria-hidden="true"></span></td>${cellsOf(r, ri, false)}</tr>`; }).join('')}
+      ${sumRow('<td class="nt-rh"><span class="nt-rl">Σ</span></td>')}
     </table>`;
   }
   function refsHtml(b) {
@@ -182,6 +286,7 @@ export async function mountNotes(host, { table, id, now, seek, label }) {
   function blockHtml(b, num, hid) {
     const ts = b.t != null ? `<button type="button" class="nt-ts" data-ts="${b.t}" data-v="${esc(b.v || '')}" contenteditable="false">⏱ ${b.vn ? `فيديو ${b.vn} · ` : ''}<span dir="ltr">${mmss(b.t)}</span></button>` : '';
     const ind = Math.min(MAXI, b.indent || 0), col = b.c ? ' nt-c-' + b.c : '', h = hid ? ' nt-hid' : '';
+    if (b.type === 'img') return `<div class="nt-b nt-img${h}${b.id === cur ? ' nt-sel' : ''}" data-id="${b.id}" tabindex="0" aria-label="صورة">${ts}<figure style="width:${b.w || 60}%"><img src="${esc(b.src)}" alt="" loading="lazy" decoding="async"></figure>${refsHtml(b)}</div>`;
     if (b.type === 'hr') return `<div class="nt-b nt-hr${h}" data-id="${b.id}" tabindex="0" aria-label="خط فاصل"><hr></div>`;
     if (b.type === 'table') return `<div class="nt-b nt-table${h}" data-id="${b.id}" style="--ind:${ind}">${ts}${tableHtml(b, false)}${refsHtml(b)}</div>`;
     const done = b.type === 'todo' && (b.task && TASKS[b.task] ? TASKS[b.task].done : b.done);
@@ -219,6 +324,9 @@ export async function mountNotes(host, { table, id, now, seek, label }) {
     dock.querySelectorAll('[data-t]').forEach(x => x.classList.toggle('on', !!b && b.type === x.dataset.t));
     dock.querySelector('[data-a=fork]').classList.toggle('on', !!b && b.type === 'arrow');
     const colNow = isT ? (b.rc || [])[cell ? cell[0] : -1] : b?.c;
+    const isImg = b && b.type === 'img';
+    if (!isImg && panel === 'img') showPanel('', true);
+    if (isImg) dock.querySelectorAll('[data-a=imgw]').forEach(x => x.classList.toggle('on', +x.dataset.w === (b.w || 60)));
     const inCell = isT && cell && doc.contains(document.activeElement) && document.activeElement.matches('th,td');
     if (inCell && !panel) showPanel('table', true);
     if (!inCell && panel === 'table') showPanel('', true);
@@ -233,7 +341,7 @@ export async function mountNotes(host, { table, id, now, seek, label }) {
   function showPanel(p, quiet) {
     panel = p === panel && !quiet ? '' : p;
     dock.querySelectorAll('.nt-pan').forEach(x => { x.hidden = x.dataset.p !== panel; });
-    dock.querySelectorAll('.nt-main [data-a=panel]').forEach(x => x.classList.toggle('on', x.dataset.p === panel));
+    dock.querySelectorAll('.nt-main [data-a=panel]').forEach(x => x.classList.toggle('on', x.dataset.p === panel || (x.dataset.p === 'more' && ['grid', 'toc', 'find'].includes(panel))));
     if (panel === 'toc') paintToc();
     if (panel === 'find') setTimeout(() => dock.querySelector('.nt-q').focus(), 30);
     place();
@@ -241,19 +349,36 @@ export async function mountNotes(host, { table, id, now, seek, label }) {
 
   // ---------- الحفظ ----------
   function save(now2) { dirty = true; st.textContent = 'بيحفظ…'; clearTimeout(saveT); saveT = setTimeout(flush, now2 ? 0 : 700); rememberSoon(); }
+  // لو الدفتر اتعدّل من جهاز تاني وإنت بتكتب: بندمج الاتنين بدل ما واحد يمسح التاني
+  async function remoteIn(force) {
+    const fresh = await one(table, id).catch(() => null), rn = fresh && fresh.notes;
+    if (!rn || !Array.isArray(rn.blocks) || !rn.updated_at || rn.updated_at === stamp) return false;
+    const merged = mergeBlocks(base, rn.blocks, B);
+    stamp = rn.updated_at; base = JSON.parse(JSON.stringify(rn.blocks));
+    if (JSON.stringify(merged) === JSON.stringify(B)) return false;
+    B = merged; if (!get(cur)) cur = B[0].id;
+    if (force || !doc.contains(document.activeElement)) draw(); else draw(cur, null);
+    remember(); return true;
+  }
   async function flush() {
     clearTimeout(saveT); if (!dirty) return; dirty = false;
     for (const b of B) if (b.html != null) b.html = sanitize(b.html);
-    try { await upd(table, id, { notes: { blocks: B, fs: FS, updated_at: new Date().toISOString() } }); if (!dead) st.textContent = 'اتحفظ'; } catch (e) { st.textContent = 'ما اتحفظش، جرّب تاني'; dirty = true; }
+    try {
+      syncText(); await remoteIn(false);
+      const at = new Date().toISOString();
+      await upd(table, id, { notes: { blocks: B, fs: FS, updated_at: at } });
+      stamp = at; base = JSON.parse(JSON.stringify(B));
+      if (!dead) st.textContent = 'اتحفظ';
+    } catch (e) { st.textContent = 'ما اتحفظش، جرّب تاني'; dirty = true; }
   }
   const after = (b, nb) => { B.splice(idx(b.id) + 1, 0, nb); return nb; };
   const syncLine = b => { const el = b && doc.querySelector(`[data-id="${b.id}"] .nt-tx`); if (el) { b.text = clean(el); b.html = el.innerHTML; } };
   const syncText = () => syncLine(get(cur));
-  const branchAt = pid => { const i = idx(pid), base = B[i].indent || 0; let j = i + 1; while (j < B.length && !['table', 'hr'].includes(B[j].type) && !LV[B[j].type] && (B[j].indent || 0) > base) j++; return j; };
+  const branchAt = pid => { const i = idx(pid), base = B[i].indent || 0; let j = i + 1; while (j < B.length && !NOTXT.includes(B[j].type) && !LV[B[j].type] && (B[j].indent || 0) > base) j++; return j; };
 
   // ---------- الفرع ----------
   function openFork(pid) {
-    const p = get(pid); if (!p || ['table', 'hr'].includes(p.type)) return;
+    const p = get(pid); if (!p || NOTXT.includes(p.type)) return;
     syncText(); closeFork(true); showPanel('', true);
     const depth = Math.min(MAXI, (p.indent || 0) + 1), j = branchAt(pid);
     const anchor = j < B.length ? doc.querySelector(`[data-id="${B[j].id}"]`) : forkBtn;
@@ -284,7 +409,7 @@ export async function mountNotes(host, { table, id, now, seek, label }) {
     const el = e.target; if (el.closest('.nt-fork')) return;
     const blk = el.closest('.nt-b'); if (!blk) return;
     const b = get(blk.dataset.id); if (!b) return;
-    if (el.matches('th,td')) b.rows[+el.dataset.r][+el.dataset.c] = clean(el); else { b.text = clean(el); b.html = el.innerHTML; }
+    if (el.matches('th,td')) { b.rows[+el.dataset.r][+el.dataset.c] = clean(el); liveSum(blk, b, +el.dataset.c); } else { b.text = clean(el); b.html = el.innerHTML; }
     if (b.task && TASKS[b.task]) upd('tasks', b.task, { title: b.text || TASKS[b.task].title }).catch(() => {});
     save();
   });
@@ -300,6 +425,7 @@ export async function mountNotes(host, { table, id, now, seek, label }) {
   doc.addEventListener('click', e => {
     const ts = e.target.closest('.nt-ts'); if (ts && seek) { e.preventDefault(); seek(Number(ts.dataset.ts), ts.dataset.v || null); return; }
     const hr = e.target.closest('.nt-hr'); if (hr) { cur = hr.dataset.id; hr.focus(); paintBar(); }
+    const im = e.target.closest('.nt-img'); if (im && !e.target.closest('.nt-ts,.nt-refs')) { cur = im.dataset.id; doc.querySelectorAll('.nt-sel').forEach(x => x.classList.remove('nt-sel')); im.classList.add('nt-sel'); im.focus({ preventScroll: true }); showPanel('img', true); paintBar(); return; }
   });
   doc.addEventListener('keydown', e => {
     const el = e.target;
@@ -309,12 +435,8 @@ export async function mountNotes(host, { table, id, now, seek, label }) {
       return;
     }
     if ((e.metaKey || e.ctrlKey) && /^[zZ]$/.test(e.key)) { e.preventDefault(); return e.shiftKey ? redo() : undo(); }
-    if (el.matches('th,td') && e.key === 'Enter' && !e.shiftKey && !e.isComposing) {   // إنتر في الجدول = الخانة اللي تحتها (ولو آخر صف: صف جديد)
-      e.preventDefault();
-      const tb = get(el.closest('.nt-b').dataset.id), r = +el.dataset.r, c = +el.dataset.c;
-      if (r + 1 < tb.rows.length) return placeCaret(el.closest('table').querySelector(`[data-r="${r + 1}"][data-c="${c}"]`), null);
-      remember(); tb.rows.push(Array(tb.rows[0].length).fill('')); (tb.rh ||= []).push(null); (tb.rc ||= []).push('');
-      cur = tb.id; draw(tb.id, null, [r + 1, c]); save(); remember(); return;
+    if (el.matches('th,td') && e.key === 'Enter' && !e.shiftKey && !e.isComposing) {   // إنتر = الخانة اللي جنبها، ولو آخر الصف: أول خانة في الصف اللي تحته (أو صف جديد)
+      e.preventDefault(); return goCell(el, 'next');
     }
     if (!el.matches('.nt-tx')) return;
     const b = get(el.closest('.nt-b').dataset.id); if (!b) return;
@@ -341,6 +463,7 @@ export async function mountNotes(host, { table, id, now, seek, label }) {
       e.preventDefault();
       const prev = B[i - 1];
       if (prev.type === 'hr') { B.splice(i - 1, 1); draw(b.id, 0); return save(); }
+      if (prev.type === 'img') { if (!text) { B.splice(i, 1); cur = prev.id; draw(); save(); } return; }
       if (prev.type === 'table') { if (!text) { B.splice(i, 1); cur = prev.id; draw(prev.id, null, [prev.rows.length - 1, prev.rows[0].length - 1]); save(); } return; }
       syncLine(b);
       const L = (prev.text || '').length;
@@ -349,6 +472,53 @@ export async function mountNotes(host, { table, id, now, seek, label }) {
       if (prev.t == null && b.t != null) { prev.t = b.t; prev.v = b.v; prev.vn = b.vn; }
       if (b.refs?.length) prev.refs = [...(prev.refs || []), ...b.refs];
       B.splice(i, 1); cur = prev.id; remember(); draw(prev.id, L); save();
+    }
+  });
+
+  // التنقل بين خانات الجدول (الأسهم وإنتر). الجدول RTL: أول عمود على اليمين
+  function goCell(el, d) {
+    const tb = get(el.closest('.nt-b').dataset.id); if (!tb) return;
+    syncCell(el);
+    const R = tb.rows, nr = R.length, nc = R[0].length; let r = +el.dataset.r, c = +el.dataset.c;
+    if (d === 'next') { if (c + 1 < nc) c++; else { r++; c = 0; } }
+    else if (d === 'l') c = Math.min(nc - 1, c + 1);
+    else if (d === 'r') c = Math.max(0, c - 1);
+    else if (d === 'u') r = Math.max(0, r - 1);
+    else if (d === 'd') r++;
+    if (r >= nr) {   // مفيش صف تحت: بنعمل واحد جديد
+      remember(); TB.rowIns(tb, nr);
+      cur = tb.id; cell = [r, c]; draw(tb.id, null, [r, c]); save(); remember(); return;
+    }
+    // خانة مدموجة: بنعدّيها أو بنروح لأولها
+    const [r0, c0] = TB.owner(tb, +el.dataset.r, +el.dataset.c), [ro, co] = TB.owner(tb, r, c);
+    if (ro === r0 && co === c0 && (r !== r0 || c !== c0)) { const m = (tb.mg || []).find(m => m.r === r0 && m.c === c0); if (d === 'next' || d === 'l') { c = m.c + m.cs; if (c >= nc) { if (d === 'l') return; r = m.r + m.rs; c = 0; } } else if (d === 'd') r = m.r + m.rs; if (r >= nr) return goCell(el.closest('table').querySelector(`[data-r="${r0}"][data-c="${c0}"]`), 'd'); }
+    [r, c] = TB.owner(tb, r, c);
+    cell = [r, c];
+    placeCaret(el.closest('table').querySelector(`[data-r="${r}"][data-c="${c}"]`), null);
+  }
+  // المجموع بيتحدّث وإنت بتكتب الرقم
+  function liveSum(root, b, c) { if (!(b.sum || []).includes(c)) return; const x = root.querySelector(`.nt-sumr [data-sc="${c}"] b`); if (x) x.textContent = fmtNum(TB.total(b, c)); }
+  function tableOp(b, a, r, c) {
+    if (a === 'mh') return TB.merge(b, r, c, 'h');
+    if (a === 'mv') return TB.merge(b, r, c, 'v');
+    if (a === 'split') return TB.split(b, r, c);
+    if (a === 'sortA' || a === 'sortD') { const e = TB.sort(b, c, a === 'sortD'); if (!e) toast(a === 'sortA' ? 'اترتّب من الصغير للكبير' : 'اترتّب من الكبير للصغير'); return e; }
+    if (a === 'sum') { TB.sum(b, c); toast((b.sum || []).includes(c) ? 'العمود ده بيتجمع تحت' : 'شلت المجموع'); return null; }
+  }
+  const syncCell = el => { const tb = get(el.closest('.nt-b')?.dataset.id); if (tb && tb.rows) tb.rows[+el.dataset.r][+el.dataset.c] = clean(el); };
+  // دوسة برّه الجدول (تحته أو جنبه) أو في الفاضي تحت الدفتر: بتكتب سطر عادي
+  function textAfter(bid) {
+    const i = idx(bid); let nx = B[i + 1];
+    if (!nx || NOTXT.includes(nx.type)) { nx = { id: nid(), type: 'p', text: '', indent: 0 }; B.splice(i + 1, 0, nx); cur = nx.id; draw(nx.id, 0); save(); remember(); return; }
+    cur = nx.id; placeCaret(doc.querySelector(`[data-id="${nx.id}"] .nt-tx`), null);
+  }
+  doc.addEventListener('click', e => {
+    if (e.target.closest('button, a, th, td, .nt-tx, .nt-fork, .nt-ts, .nt-img')) return;
+    const tbl = e.target.closest('.nt-table');
+    if (tbl) return textAfter(tbl.dataset.id);
+    if (e.target === doc) {   // الفاضي تحت آخر سطر
+      const last = B[B.length - 1], box = doc.lastElementChild === forkBtn ? doc.children[doc.children.length - 2] : doc.lastElementChild;
+      if (box && e.clientY > box.getBoundingClientRect().bottom) { if (NOTXT.includes(last.type)) return textAfter(last.id); cur = last.id; placeCaret(doc.querySelector(`[data-id="${last.id}"] .nt-tx`), null); }
     }
   });
 
@@ -386,6 +556,8 @@ export async function mountNotes(host, { table, id, now, seek, label }) {
         <div class="nt-row">
           <button type="button" data-ta="row+">+ صف</button><button type="button" data-ta="col+">+ عمود</button>
           <button type="button" data-ta="row-">− صف</button><button type="button" data-ta="col-">− عمود</button>
+          <button type="button" data-ta="mh">⇠ ادمج مع اللي جنبها</button><button type="button" data-ta="mv">⇣ ادمج مع اللي تحتها</button><button type="button" data-ta="split">افصل</button>
+          <button type="button" data-ta="sortA">رتّب ↑</button><button type="button" data-ta="sortD">رتّب ↓</button><button type="button" data-ta="sum">Σ اجمع العمود</button>
           <button type="button" data-ta="pal">🎨 لون</button><button type="button" data-ta="fit">رجّع المقاسات</button>
         </div>
       </div>`;
@@ -393,14 +565,16 @@ export async function mountNotes(host, { table, id, now, seek, label }) {
     dock.hidden = true;
     TE = { b, ov, sc: ov.querySelector('.nt-ted-sc'), cell: rc || [0, 0] };
     ov.addEventListener('pointerdown', e => { if (e.target.closest('button')) e.preventDefault(); onGrip(e); });
-    ov.addEventListener('input', e => { const el = e.target; if (!el.matches('th,td')) return; b.rows[+el.dataset.r][+el.dataset.c] = clean(el); save(); });
+    ov.addEventListener('input', e => { const el = e.target; if (!el.matches('th,td')) return; b.rows[+el.dataset.r][+el.dataset.c] = clean(el); liveSum(ov, b, +el.dataset.c); save(); });
     ov.addEventListener('focusin', e => { const el = e.target; if (!el.matches('th,td')) return; TE.cell = [+el.dataset.r, +el.dataset.c]; markCell(); });
     ov.addEventListener('keydown', e => {
       if (e.key === 'Escape') { e.preventDefault(); return closeTable(); }
       const el = e.target; if (!el.matches('th,td')) return;
       if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {   // إنتر = الخانة اللي تحتها (ولو آخر صف: صف جديد)
-        e.preventDefault(); const [r, c] = TE.cell;
-        if (r + 1 >= b.rows.length) { tAct('row+'); } else focusCell(r + 1, c);
+        e.preventDefault(); const [r, c] = TE.cell, nc = b.rows[0].length;
+        if (c + 1 < nc) focusCell(r, c + 1);
+        else if (r + 1 < b.rows.length) focusCell(r + 1, 0);
+        else { remember(); TB.rowIns(b, b.rows.length); paintT([r + 1, 0]); save(); remember(); }
       }
     });
     ov.addEventListener('click', e => { const btn = e.target.closest('button[data-ta]'); if (btn) { e.preventDefault(); tAct(btn.dataset.ta, btn); } });
@@ -436,7 +610,7 @@ export async function mountNotes(host, { table, id, now, seek, label }) {
     if (a === 'undo' || a === 'redo') {
       remember(); const bid = b.id;
       if (a === 'undo' ? hi <= 0 : hi >= hist.length - 1) return;
-      hi += a === 'undo' ? -1 : 1; B = JSON.parse(hist[hi]); paintUndo();
+      hi += a === 'undo' ? -1 : 1; B = JSON.parse(hist[hi]); paintUndo(); keepHist();
       const nb = get(bid); if (!nb) { closeTable(true); draw(); save(); return; }
       TE.b = nb; const rr = Math.min(r, nb.rows.length - 1), cc = Math.min(c, nb.rows[0].length - 1);
       paintT([rr, cc]); dirty = true; clearTimeout(saveT); saveT = setTimeout(flush, 700); return;
@@ -444,10 +618,11 @@ export async function mountNotes(host, { table, id, now, seek, label }) {
     if (a === 'pal') { const p = TE.ov.querySelector('.nt-ted-cols'); p.hidden = !p.hidden; btn.classList.toggle('on', !p.hidden); fitTE(); return; }
     if (a === 'del') { const i = idx(b.id); closeTable(true); B.splice(i, 1); if (!B.length) B.push({ id: nid(), type: 'p', text: '', indent: 0 }); cur = B[Math.max(0, i - 1)].id; draw(); save(); return toast('الجدول اتمسح', () => undo()); }
     remember();
-    if (a === 'row+' || a === 'rowat') { if (a === 'rowat') r = +btn.dataset.r; R.splice(r + 1, 0, Array(cols).fill('')); (b.rh ||= []).splice(r + 1, 0, null); (b.rc ||= []).splice(r + 1, 0, a === 'rowat' ? (b.rc[r] || '') : ''); r++; }
-    else if (a === 'col+' || a === 'colat') { if (a === 'colat') c = +btn.dataset.c; R.forEach(x => x.splice(c + 1, 0, '')); b.cw.splice(c + 1, 0, COLW); c++; }
-    else if (a === 'row-') { if (R.length <= 1) return; R.splice(r, 1); (b.rh || []).splice(r, 1); (b.rc || []).splice(r, 1); r = Math.max(0, r - 1); }
-    else if (a === 'col-') { if (cols <= 1) return; R.forEach(x => x.splice(c, 1)); b.cw.splice(c, 1); c = Math.max(0, c - 1); }
+    if (a === 'row+') { TB.rowIns(b, r + 1); r++; }
+    else if (a === 'col+') { TB.colIns(b, c + 1); c++; }
+    else if (a === 'row-') { if (!TB.rowDel(b, r)) return; r = Math.max(0, r - 1); }
+    else if (a === 'col-') { if (!TB.colDel(b, c)) return; c = Math.max(0, c - 1); }
+    else if (['mh', 'mv', 'split', 'sortA', 'sortD', 'sum'].includes(a)) { const err = tableOp(b, a, r, c); if (err) return toast(err); [r, c] = TB.owner(b, r, c); }
     else if (a === 'color') { (b.rc ||= [])[r] = btn.dataset.col || ''; }
     else if (a === 'fit') { b.cw = Array(cols).fill(COLW); b.rh = []; }
     paintT([r, c]); save(); remember();
@@ -490,30 +665,66 @@ export async function mountNotes(host, { table, id, now, seek, label }) {
   dock.querySelector('.nt-q').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); hitI++; goHit(); } });
 
   // ---------- الخريطة الذهنية ----------
-  function openMap() {
-    syncText();
-    const title = (B.find(b => b.type === 'h1' && (b.text || '').trim()) || {}).text || row?.title || 'الدفتر';
-    const root = { text: title, kids: [], lv: 0 }, stack = [root];
-    const nodeOf = b => ({ text: b.type === 'table' ? `جدول (${b.rows.length - 1} صف)` : (b.text || '').trim(), c: b.c, kind: b.type, kids: [], lv: LV[b.type] || 9, ind: b.indent || 0 });
+  // الخريطة الذهنية: بتتبني من الدفتر، ودوسة على أي فرع بتعدّل اسمه أو تضيف تحته أو تمسحه (والدفتر بيتعدّل معاها)
+  function mapTree() {
+    const h1 = B.find(b => b.type === 'h1' && (b.text || '').trim());
+    const title = (h1 || {}).text || row?.title || 'الدفتر';
+    const root = { text: title, kids: [], lv: 0, bid: h1 ? h1.id : null }, stack = [root];
+    const nodeOf = b => ({ text: b.type === 'table' ? `جدول (${b.rows.length - 1} صف)` : b.type === 'img' ? '📷 صورة' : (b.text || '').trim(), c: b.c, kind: b.type, kids: [], lv: LV[b.type] || 9, ind: b.indent || 0, bid: b.id });
     let lastHead = root;
     for (const b of B) {
-      if (b.type === 'hr' || (b.type !== 'table' && !(b.text || '').trim()) || (b.type === 'h1' && b.text.trim() === title)) continue;
+      if (b.type === 'hr' || (b.type !== 'table' && b.type !== 'img' && !(b.text || '').trim()) || (h1 && b.id === h1.id)) continue;
       if (LV[b.type]) { while (stack.length > 1 && stack[stack.length - 1].lv >= LV[b.type]) stack.pop(); const n = nodeOf(b); stack[stack.length - 1].kids.push(n); stack.push(n); lastHead = n; }
       else {
-        // الفروع والسطور اللي ليها بادئة بتتعلق في اللي فوقها
         const n = nodeOf(b); let parent = lastHead;
         const under = parent.kids.filter(x => x.lv === 9);
         for (let d = n.ind; d > 0 && under.length; d--) { const p = [...under].reverse().find(x => x.ind < n.ind); if (p) { parent = p; break; } }
         parent.kids.push(n);
       }
     }
+    return root;
+  }
+  // نهاية "حتة" السطر: العنوان لحد العنوان اللي بعده من نفس المستوى، والسطر لحد آخر فروعه
+  const spanEnd = i => { const t = B[i]; let e = i + 1; if (LV[t.type]) { while (e < B.length && !(LV[B[e].type] && LV[B[e].type] <= LV[t.type])) e++; } else { const k = t.indent || 0; while (e < B.length && !LV[B[e].type] && !NOTXT.includes(B[e].type) && (B[e].indent || 0) > k) e++; } return e; };
+  function openMap() {
+    syncText();
     const short = t => t.length > 60 ? t.slice(0, 58) + '…' : t;
-    const tree = n => `<li><span class="mm-n mm-${n.kind || 'root'}${n.c ? ' nt-c-' + n.c : ''}">${esc(short(n.text))}</span>${n.kids.length ? `<ul>${n.kids.map(tree).join('')}</ul>` : ''}</li>`;
+    const tree = n => `<li><button type="button" class="mm-n mm-${n.kind || 'root'}${n.c ? ' nt-c-' + n.c : ''}" data-bid="${n.bid || ''}">${esc(short(n.text))}</button>${n.kids.length ? `<ul>${n.kids.map(tree).join('')}</ul>` : ''}</li>`;
     const ov = document.createElement('div');
-    ov.className = 'nt-map'; ov.innerHTML = `<div class="nt-map-hd"><b>🧠 خريطة الدفتر</b><button type="button" class="rb" aria-label="اقفل">${ic('x', 20)}</button></div><div class="nt-map-sc"><ul class="mm">${tree(root)}</ul></div>`;
-    ov.querySelector('button').onclick = () => ov.remove();
+    ov.className = 'nt-map';
+    ov.innerHTML = `<div class="nt-map-hd"><b>🧠 خريطة الدفتر</b><span class="mut nt-map-tip">دوس على أي فرع عشان تعدّله</span><button type="button" class="rb" data-m="close" aria-label="اقفل">${ic('x', 20)}</button></div>
+      <div class="nt-map-sc"><ul class="mm"></ul></div>
+      <div class="nt-map-ed" hidden><input class="inp" aria-label="اسم الفرع"><div class="nt-row"><button type="button" data-m="save" class="nt-map-ok">احفظ الاسم</button><button type="button" data-m="kid">+ فرع تحته</button><button type="button" data-m="del" class="bad">امسحه</button><button type="button" data-m="x">إلغاء</button></div></div>`;
+    const ul = ov.querySelector('.mm'), ed = ov.querySelector('.nt-map-ed'), inp = ed.querySelector('input');
+    let sel = null;
+    const paint = () => { ul.innerHTML = tree(mapTree()); if (sel) ul.querySelector(`[data-bid="${sel}"]`)?.classList.add('on'); };
+    const pick = bid => { sel = bid; const t = get(bid); ed.hidden = !t; if (!t) return; inp.value = t.type === 'table' || t.type === 'img' ? '' : t.text || ''; inp.disabled = t.type === 'table' || t.type === 'img'; paint(); };
+    const commit = () => { draw(); save(); remember(); paint(); };
+    ov.addEventListener('click', e => {
+      const n = e.target.closest('.mm-n'); if (n) { if (n.dataset.bid) pick(n.dataset.bid); else toast('اكتب عنوان (العنوان الكبير) في أول الدفتر عشان تعدّله من هنا'); return; }
+      const m = e.target.closest('[data-m]'); if (!m) return;
+      const act = m.dataset.m;
+      if (act === 'close') { ov.remove(); return; }
+      if (act === 'x') { sel = null; ed.hidden = true; paint(); return; }
+      const t = get(sel); if (!t) return;
+      remember();
+      if (act === 'save') { const v = inp.value.trim(); if (!v || inp.disabled) return; t.text = v; t.html = esc(v); commit(); toast('اتعدّل'); }
+      else if (act === 'kid') {
+        const i = idx(t.id), e2 = spanEnd(i), v = 'فرع جديد';
+        let nb;
+        if (LV[t.type]) { let j = i + 1; while (j < e2 && !LV[B[j].type]) j++; nb = { id: nid(), type: 'li', text: v, indent: 0 }; B.splice(j, 0, nb); }
+        else { nb = { id: nid(), type: 'arrow', text: v, indent: Math.min(MAXI, (t.indent || 0) + 1), c: BRANCH[(t.indent || 0) % BRANCH.length] }; B.splice(e2, 0, nb); }
+        commit(); pick(nb.id); inp.select();
+      } else if (act === 'del') {
+        const i = idx(t.id), n2 = spanEnd(i) - i; B.splice(i, n2); if (!B.length) B.push({ id: nid(), type: 'h1', text: '', indent: 0 });
+        sel = null; ed.hidden = true; commit(); toast(n2 > 1 ? `اتمسح هو واللي تحته (${n2})` : 'اتمسح', () => { undo(); paint(); });
+      }
+    });
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); ed.querySelector('[data-m=save]').click(); } });
+    paint();
     document.body.appendChild(ov);
   }
+
 
   // ---------- PDF ----------
   function pdf() {
@@ -524,6 +735,7 @@ export async function mountNotes(host, { table, id, now, seek, label }) {
       if (b.type !== 'ol') for (const x of Object.keys(olc)) if (+x >= k) delete olc[x];
       const t = b.html != null ? sanitize(b.html) : esc(b.text || ''), ts = b.t != null ? `<span style="font:10pt monospace;background:#FBE7B5;padding:0 5px;border-radius:4px;margin-left:6px">${b.vn ? 'فيديو ' + b.vn + ' · ' : ''}${mmss(b.t)}</span>` : '';
       if (b.type === 'hr') return '<hr style="border:0;border-top:1px solid #999;margin:12px 0">';
+      if (b.type === 'img') return `<div style="margin:8px 0">${ts}<img src="${esc(b.src)}" style="width:${b.w || 60}%;border-radius:6px"></div>`;
       if (b.type === 'table') return `<table style="border-collapse:collapse;margin:8px 0;width:100%">${b.rows.map((r, ri) => `<tr style="${(b.rc || [])[ri] ? 'background:' + PRINTC[b.rc[ri]] + '22' : ''}">${r.map(c => `<${ri ? 'td' : 'th'} style="border:1px solid #999;padding:5px 7px;text-align:right;vertical-align:top">${esc(c)}</${ri ? 'td' : 'th'}>`).join('')}</tr>`).join('')}</table>`;
       if (b.type === 'h1') return `<h1 style="font:700 20pt 'Reem Kufi',sans-serif;margin:4px 0 10px;${colr}">${t}</h1>`;
       if (b.type === 'h2') return `<h2 style="font:600 15pt 'Reem Kufi',sans-serif;margin:16px 0 6px;border-bottom:1px solid #ccc;${colr}">${t}</h2>`;
@@ -536,8 +748,8 @@ export async function mountNotes(host, { table, id, now, seek, label }) {
   }
 
   // ---------- تراجع / إعادة ----------
-  function undo() { syncText(); remember(); if (hi <= 0) return; hi--; B = JSON.parse(hist[hi]); if (!get(cur)) cur = B[0].id; draw(cur, null); save(); hi = Math.min(hi, hist.length - 1); clearTimeout(histT); paintUndo(); }
-  function redo() { if (hi >= hist.length - 1) return; hi++; B = JSON.parse(hist[hi]); if (!get(cur)) cur = B[0].id; draw(cur, null); dirty = true; clearTimeout(saveT); saveT = setTimeout(flush, 700); paintUndo(); }
+  function undo() { syncText(); remember(); if (hi <= 0) return; hi--; B = JSON.parse(hist[hi]); if (!get(cur)) cur = B[0].id; draw(cur, null); save(); hi = Math.min(hi, hist.length - 1); clearTimeout(histT); paintUndo(); keepHist(); }
+  function redo() { if (hi >= hist.length - 1) return; hi++; B = JSON.parse(hist[hi]); if (!get(cur)) cur = B[0].id; draw(cur, null); dirty = true; clearTimeout(saveT); saveT = setTimeout(flush, 700); paintUndo(); keepHist(); }
 
   // ---------- الأزرار ----------
   dock.addEventListener('pointerdown', e => { if (e.target.closest('button')) e.preventDefault(); });
@@ -566,7 +778,11 @@ export async function mountNotes(host, { table, id, now, seek, label }) {
     if (fork && a === 'forkx') { const p = fork.pid; closeFork(); return placeCaret(doc.querySelector(`[data-id="${p}"] .nt-tx`), null); }
     if (fork && a === 'forkcol') { fork.col = btn.dataset.col; fork.box.className = `nt-fork in nt-c-${fork.col}`; fork.box.querySelectorAll('.nt-dot').forEach(d => d.classList.toggle('on', d === btn)); return placeCaret(fork.box.querySelector('.nt-fork-in'), null); }
     if (a === 'panel') return showPanel(btn.dataset.p);
-    if (a === 'topen') return openTable(btn.dataset.bid, [0, 0]);
+    if (a === 'tmore') { const m = dock.querySelector('.nt-tm'); m.hidden = !m.hidden; btn.classList.toggle('on', !m.hidden); return place(); }
+    if (a === 'topen') { const tid = btn.dataset.bid || (get(cur)?.type === 'table' ? cur : null); if (tid) openTable(tid, btn.dataset.bid ? [0, 0] : cell || [0, 0]); return; }
+    if (a === 'photo') { showPanel('', true); return pickPhoto(); }
+    if (a === 'docx') { showPanel('', true); syncText(); try { const { saveDocx } = await import('./docx.js'); await saveDocx(row?.title || 'الدفتر', B, TASKS); } catch (e) { console.error(e); toast('ما اتعملش الملف، جرّب تاني'); } return; }
+    if (a === 'go') { const el = document.activeElement; if (el && el.matches('th,td') && doc.contains(el)) goCell(el, btn.dataset.d); return; }
     if (a === 'kb') { document.activeElement?.blur(); return showPanel('', true); }
     if (a === 'undo') return undo();
     if (a === 'redo') return redo();
@@ -586,20 +802,21 @@ export async function mountNotes(host, { table, id, now, seek, label }) {
     const keepCell = b.type === 'table' ? cell : null;
     remember();
     if (btn.dataset.t) {
-      if (['table', 'hr'].includes(b.type)) { b = after(b, { id: nid(), type: 'p', text: '', indent: 0 }); cur = b.id; }
+      if (NOTXT.includes(b.type)) { b = after(b, { id: nid(), type: 'p', text: '', indent: 0 }); cur = b.id; }
       const t = btn.dataset.t;
       if (b.type === t && ['li', 'ol', 'todo'].includes(t)) b.type = 'p';   // نفس الزرار تاني = يرجع نص
       else { if (['h1', 'h2'].includes(t)) b.indent = 0; if (b.type === 'arrow') delete b.c; delete b.kind; b.type = t; }
       draw(b.id, pos); return save();
     }
-    if (a === 'fork') { if (['table', 'hr'].includes(b.type)) return toast('الفرع بيبقى من سطر كلام'); return openFork(b.id); }
+    if (a === 'fork') { if (NOTXT.includes(b.type)) return toast('الفرع بيبقى من سطر كلام'); return openFork(b.id); }
     if (a === 'color') {
       const c = btn.dataset.col || '';
       if (b.type === 'table') { const r = cell ? cell[0] : b.rows.length - 1; (b.rc ||= [])[r] = c; draw(b.id, null, cell || [r, 0]); }
       else { if (c) b.c = c; else delete b.c; draw(b.id, pos); }
       return save();
     }
-    if (a === 'note') { if (['table', 'hr'].includes(b.type)) return; b.type = 'note'; b.kind = btn.dataset.k; draw(b.id, pos); return save(); }
+    if (a === 'imgw') { if (b.type !== 'img') return; b.w = +btn.dataset.w; draw(); doc.querySelector(`[data-id="${b.id}"]`)?.classList.add('nt-sel'); save(); remember(); return paintBar(); }
+    if (a === 'note') { if (NOTXT.includes(b.type)) return; b.type = 'note'; b.kind = btn.dataset.k; draw(b.id, pos); return save(); }
     if (a === 'fs') { FS = Math.max(13, Math.min(24, FS + Number(btn.dataset.d))); doc.style.setProperty('--ntfs', FS + 'px'); dock.querySelector('.nt-fsv').textContent = FS; dirty = true; return save(); }
     if (a === 'in') { b.indent = Math.min(MAXI, (b.indent || 0) + 1); draw(b.id, pos, keepCell); }
     else if (a === 'out') { b.indent = Math.max(0, (b.indent || 0) - 1); if (b.type === 'arrow' && !b.indent) { b.type = 'p'; delete b.c; } draw(b.id, pos, keepCell); }
@@ -613,8 +830,8 @@ export async function mountNotes(host, { table, id, now, seek, label }) {
     } else if (a === 'time') {
       const tm = now && now(); if (tm == null) return;
       const v = tm.v || null, vn = tm.vn || null;
-      if (!['table', 'hr'].includes(b.type) && !(b.text || '').trim()) Object.assign(b, { t: Math.floor(tm.t), v, vn });
-      else b = after(b, { id: nid(), type: 'p', text: '', indent: ['table', 'hr'].includes(b.type) ? 0 : b.indent || 0, t: Math.floor(tm.t), v, vn });
+      if (!NOTXT.includes(b.type) && !(b.text || '').trim()) Object.assign(b, { t: Math.floor(tm.t), v, vn });
+      else b = after(b, { id: nid(), type: 'p', text: '', indent: NOTXT.includes(b.type) ? 0 : b.indent || 0, t: Math.floor(tm.t), v, vn });
       cur = b.id; draw(b.id, 0);
     } else if (a === 'fold' || a === 'check' || a === 'goto' || a === 'unref') {
       const t = get(btn.dataset.bid);
@@ -628,10 +845,10 @@ export async function mountNotes(host, { table, id, now, seek, label }) {
       if (a === 'unref' && t) { t.refs.splice(+btn.dataset.i, 1); draw(); }
     } else if (a === 'link') {
       if (b.type === 'hr') return;
-      openLinkSheet();
+      showPanel('', true); openLinkSheet();
       return;
     } else if (a === 'tasknow') {
-      if (['table', 'hr'].includes(b.type) || !(b.text || '').trim()) return toast('اكتب السطر الأول');
+      if (NOTXT.includes(b.type) || !(b.text || '').trim()) return toast('اكتب السطر الأول');
       if (b.task) return toast('السطر ده مهمة بالفعل');
       try {
         const t = await ins('tasks', { title: b.text.trim(), due_on: today() });
@@ -639,7 +856,7 @@ export async function mountNotes(host, { table, id, now, seek, label }) {
         TASKS[t.id] = t; b.task = t.id; b.type = 'todo'; showPanel('', true); draw(b.id, pos); toast('اتعملت مهمة في النهاردة');
       } catch (e) { return toast('ما اتعملتش، جرّب تاني'); }
     } else if (a === 'lesson') {
-      if (['table', 'hr'].includes(b.type) || !(b.text || '').trim()) return toast('اكتب السطر الأول');
+      if (NOTXT.includes(b.type) || !(b.text || '').trim()) return toast('اكتب السطر الأول');
       if (b.lesson) return toast('السطر ده في "اتعلمت إيه" بالفعل');
       try { const L = await ins('learnings', { source_type: owner, source_id: id, text: b.text.trim(), status: 'new' }); b.lesson = L.id; showPanel('', true); draw(b.id, pos); toast('اتحط في "اتعلمت إيه". بعد أسبوعين هسألك طبّقته ولا لأ'); }
       catch (e) { return toast('ما اتحطش، جرّب تاني'); }
@@ -671,17 +888,72 @@ export async function mountNotes(host, { table, id, now, seek, label }) {
       if (a === 'rowat') { const r = +btn.dataset.r + 1; R.splice(r, 0, Array(nc).fill('')); (tb.rh ||= []).splice(r, 0, null); (tb.rc ||= []).splice(r, 0, (tb.rc || [])[r - 1] || ''); draw(tb.id, null, [r, 0]); }
       else { const c = +btn.dataset.c + 1; R.forEach(x => x.splice(c, 0, '')); tb.cw.splice(c, 0, COLW); draw(tb.id, null, [0, c]); }
     } else if (b.type === 'table') {
-      const R = b.rows, cols = R[0].length, [r, c] = cell || [R.length - 1, cols - 1];
-      if (a === 'row+') { R.splice(r + 1, 0, Array(cols).fill('')); (b.rh ||= []).splice(r + 1, 0, null); (b.rc ||= []).splice(r + 1, 0, ''); draw(b.id, null, [r + 1, c]); }
-      else if (a === 'col+') { R.forEach(x => x.splice(c + 1, 0, '')); b.cw.splice(c + 1, 0, COLW); draw(b.id, null, [r, c + 1]); }
-      else if (a === 'row-' && R.length > 1) { R.splice(r, 1); (b.rh || []).splice(r, 1); (b.rc || []).splice(r, 1); draw(b.id, null, [Math.max(0, r - 1), c]); }
-      else if (a === 'col-' && cols > 1) { R.forEach(x => x.splice(c, 1)); b.cw.splice(c, 1); draw(b.id, null, [r, Math.max(0, c - 1)]); }
+      const R = b.rows, cols = R[0].length; let [r, c] = cell || [R.length - 1, cols - 1];
+      if (a === 'row+') { TB.rowIns(b, r + 1); draw(b.id, null, [r + 1, c]); }
+      else if (a === 'col+') { TB.colIns(b, c + 1); draw(b.id, null, [r, c + 1]); }
+      else if (a === 'row-') { if (TB.rowDel(b, r)) draw(b.id, null, [Math.max(0, r - 1), Math.min(c, b.rows[0].length - 1)]); }
+      else if (a === 'col-') { if (TB.colDel(b, c)) draw(b.id, null, [r, Math.max(0, c - 1)]); }
       else if (a === 'fit') { b.cw = Array(cols).fill(COLW); b.rh = []; draw(b.id, null, [r, c]); }
+      else if (['mh', 'mv', 'split', 'sortA', 'sortD', 'sum'].includes(a)) { const err = tableOp(b, a, r, c); if (err) return toast(err); [r, c] = TB.owner(b, r, c); cell = [r, c]; draw(b.id, null, [r, c]); }
     }
     save(); remember();   // كل خطوة لوحدها في "تراجع"
   }
   dock.addEventListener('click', e => { const btn = e.target.closest('button[data-a], button[data-t], button[data-cmd]'); if (btn) { e.preventDefault(); onAct(btn); } });
   host.addEventListener('click', e => { const btn = e.target.closest('button[data-a], .nt-add'); if (btn && host.contains(btn)) { e.preventDefault(); onAct(btn); } });
+
+  // ---------- 📷 الصور: تختار صورة، تحدد حجمها، وبتترفع مصغّرة (عشان المساحة المجانية تكفي) ----------
+  function pickPhoto() {
+    const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*';
+    inp.onchange = () => { const f = inp.files && inp.files[0]; if (f) photoSheet(f); };
+    inp.click();
+  }
+  async function shrink(file) {
+    const url = URL.createObjectURL(file);
+    try {
+      const im = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
+      const k = Math.min(1, 1600 / Math.max(im.naturalWidth, im.naturalHeight));
+      const c = document.createElement('canvas'); c.width = Math.round(im.naturalWidth * k); c.height = Math.round(im.naturalHeight * k);
+      c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
+      return await new Promise(res => c.toBlob(res, 'image/jpeg', 0.78));
+    } finally { URL.revokeObjectURL(url); }
+  }
+  function photoSheet(file) {
+    const at = now && now();
+    let w = 60;
+    const ov = document.createElement('div'); ov.className = 'nt-ph'; ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-label', 'ضيف صورة');
+    const url = URL.createObjectURL(file);
+    ov.innerHTML = `<div class="nt-ph-box"><div class="nt-ph-hd"><b>الصورة هتبقى قد إيه؟</b></div>
+      <div class="nt-ph-pv"><div class="nt-ph-paper"><figure style="width:${w}%"><img src="${url}" alt=""></figure></div></div>
+      <div class="nt-row nt-ph-sz">${IMGW.map(([x, l]) => `<button type="button" data-w="${x}"${x === w ? ' class="on"' : ''}>${l}</button>`).join('')}</div>
+      ${at ? `<div class="mut nt-ph-t">⏱ هتتحط عند <span dir="ltr">${mmss(at.t)}</span>${at.vn ? ` في فيديو ${at.vn}` : ''}</div>` : ''}
+      <div class="nt-ph-ft"><button type="button" data-x="no">إلغاء</button><button type="button" data-x="ok" class="nt-ph-ok">ضيفها</button></div></div>`;
+    document.body.appendChild(ov);
+    const close = () => { URL.revokeObjectURL(url); ov.remove(); };
+    ov.addEventListener('click', async e => {
+      if (e.target === ov) return close();
+      const sz = e.target.closest('[data-w]');
+      if (sz) { w = +sz.dataset.w; ov.querySelector('figure').style.width = w + '%'; ov.querySelectorAll('[data-w]').forEach(x => x.classList.toggle('on', x === sz)); return; }
+      const x = e.target.closest('[data-x]'); if (!x) return;
+      if (x.dataset.x === 'no') return close();
+      const ok = ov.querySelector('.nt-ph-ok'); ok.disabled = true; ok.textContent = 'بترفع…';
+      try {
+        if (!sb) throw new Error('Supabase مش متوصّل');
+        if (!navigator.onLine) throw new Error('محتاج نت عشان الصورة تترفع');
+        const blob = await shrink(file);
+        const { data } = await sb.auth.getSession(); const uid = data.session?.user?.id; if (!uid) throw new Error('لازم تكون داخل على النوتة');
+        const path = `${uid}/${Date.now().toString(36)}-${nid()}${nid()}.jpg`;
+        const up = await sb.storage.from('notes').upload(path, blob, { contentType: 'image/jpeg', cacheControl: '31536000' });
+        if (up.error) throw new Error(/bucket|not found/i.test(up.error.message) ? 'شغّل ملف SQL بتاع الدفعة دي الأول (مكان الصور)' : up.error.message);
+        const src = sb.storage.from('notes').getPublicUrl(path).data.publicUrl;
+        syncText(); remember();
+        const b0 = get(cur) || B[B.length - 1];
+        const ib = after(b0, { id: nid(), type: 'img', src, w, ...(at ? { t: Math.floor(at.t), v: at.v || null, vn: at.vn || null } : {}) });
+        if (idx(ib.id) === B.length - 1) B.push({ id: nid(), type: 'p', text: '', indent: 0 });
+        cur = ib.id; close(); draw(null, null, null, [ib.id]); save(); remember();
+        doc.querySelector(`[data-id="${ib.id}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      } catch (err) { ok.disabled = false; ok.textContent = 'ضيفها'; toast('ما اترفعتش: ' + (err.message || 'جرّب تاني')); }
+    });
+  }
 
   // ---------- 🔗 اربط بحاجة في السيستم ----------
   function openLinkSheet() {
@@ -715,6 +987,7 @@ export async function mountNotes(host, { table, id, now, seek, label }) {
 
   draw(B.length === 1 && !B[0].text ? B[0].id : null);
   const onHide = () => { if (document.hidden) flush(); };
+  onSync(t => { if (t === 'data' && !dead && !dirty) remoteIn(false).catch(() => {}); });
   document.addEventListener('visibilitychange', onHide);
   const inst = {
     flush, addRef,
@@ -746,9 +1019,98 @@ export const notesGlobal = {
   async 'nt-lmake'(el) { closeSheet(); if (ACTIVE) await ACTIVE.addRef(el.dataset.tt, el.dataset.tid, el.dataset.title); },
 };
 
-// صفحة الدفتر لوحدها (من غير فيديو): #/notes/c_<id> أو m_<id>
-let page = null;
+// شكل الدفتر للقراية بس (في الدفتر العام): نفس الشكل من غير كتابة
+const MM = s => mmss(s);
+export function staticHtml(blocks, link) {
+  const olc = {}; let out = '';
+  for (const b of blocks || []) {
+    const k = b.indent || 0, col = b.c ? ' nt-c-' + b.c : '';
+    if (b.type !== 'ol') for (const q of Object.keys(olc)) if (+q >= k) delete olc[q];
+    const ts = b.t != null && link ? `<a class="nt-ts" href="${link}${link.includes('?') ? '&' : '?'}t=${b.t}${b.v ? '&v=' + esc(b.v) : ''}">⏱ ${b.vn ? `فيديو ${b.vn} · ` : ''}<span dir="ltr">${MM(b.t)}</span></a>` : b.t != null ? `<span class="nt-ts">⏱ <span dir="ltr">${MM(b.t)}</span></span>` : '';
+    if (b.type === 'hr') { out += '<div class="nt-b nt-hr"><hr></div>'; continue; }
+    if (b.type === 'img') { out += `<div class="nt-b nt-img">${ts}<figure style="width:${b.w || 60}%"><img src="${esc(b.src)}" alt="" loading="lazy"></figure></div>`; continue; }
+    if (b.type === 'table') {
+      const own = TB.own(b), S = new Set(b.sum || []);
+      out += `<div class="nt-b nt-table">${ts}<div class="nt-tw nt-inl"><table><tbody>${b.rows.map((r, ri) => `<tr class="${(b.rc || [])[ri] ? 'nt-c-' + b.rc[ri] : ''}">${r.map((x, ci) => { const m = own[`${ri},${ci}`]; if (m && (m.r !== ri || m.c !== ci)) return ''; const tg = ri ? 'td' : 'th'; return `<${tg}${m ? ` rowspan="${m.rs}" colspan="${m.cs}"` : ''}${S.has(ci) && ri ? ' class="nt-numc"' : ''}>${esc(x)}</${tg}>`; }).join('')}</tr>`).join('')}${S.size ? `<tr class="nt-sumr">${b.rows[0].map((_, ci) => `<td class="${S.has(ci) ? 'nt-numc' : ''}">${S.has(ci) ? `<b>${fmtNum(TB.total(b, ci))}</b>` : ''}</td>`).join('')}</tr>` : ''}</tbody></table></div></div>`;
+      continue;
+    }
+    const pre = b.type === 'ol' ? `<span class="nt-num">${(olc[k] = (olc[k] || 0) + 1)}.</span>` : b.type === 'todo' ? `<span class="nt-chk${b.done ? ' on' : ''}">${b.done ? ic('check', 14) : ''}</span>` : b.type === 'note' ? `<span class="nt-nico">${(NOTE[b.kind] || NOTE.warn)[0]}</span>` : '';
+    if (!(b.text || '').trim() && !pre) continue;
+    out += `<div class="nt-b nt-${b.type}${b.type === 'note' ? ' nt-n-' + (b.kind || 'warn') : ''}${col}${b.type === 'todo' && b.done ? ' nt-done' : ''}" style="--ind:${Math.min(MAXI, k)}">${ts}<div class="nt-line">${pre}<div class="nt-tx">${inner(b)}</div></div></div>`;
+  }
+  return out;
+}
+const textOf = b => (b.text || '') + (b.rows ? ' ' + b.rows.flat().join(' ') : '');
+
+// الدفتر العام: #/notebook — "دفتري" تكتب فيه على طول، و"من الكورسات" فيه كل اللي كتبته في دفاتر الكورسات والبودكاست
+let gen = null, page = null;
+async function generalRow() {
+  let r = (await list('notebooks')).filter(x => !x.archived_at).sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)))[0];
+  if (!r) r = await ins('notebooks', { title: 'دفتري', notes: { blocks: [{ id: nid(), type: 'h1', text: 'دفتري', indent: 0 }], fs: 16 } });
+  return r;
+}
+async function sources() {
+  const [cs, ms] = await Promise.all([list('courses').catch(() => []), list('media').catch(() => [])]);
+  return [...cs.map(r => ({ r, k: 'c', kind: 'كورس' })), ...ms.map(r => ({ r, k: 'm', kind: r.kind === 'podcast' ? 'بودكاست' : 'كتاب/حلقة' }))]
+    .filter(x => !x.r.archived_at && x.r.notes && (x.r.notes.blocks || []).some(b => (textOf(b) || '').trim() || b.type === 'img'))
+    .sort((a, b) => String(b.r.notes.updated_at || '').localeCompare(String(a.r.notes.updated_at || '')));
+}
+const ago = iso => { if (!iso) return ''; const d = Math.round((Date.now() - Date.parse(iso)) / 864e5); return d <= 0 ? 'النهاردة' : d === 1 ? 'إمبارح' : d < 30 ? `من ${d} يوم` : new Date(iso).toLocaleDateString('ar-EG-u-nu-latn', { day: 'numeric', month: 'short' }); };
+function allHtml(list2) {
+  if (!list2.length) return '<div class="empty">لما تكتب في دفتر أي كورس أو بودكاست، هيظهر هنا.</div>';
+  return list2.map(({ r, k, kind }) => {
+    const bl = r.notes.blocks, n = bl.filter(b => (textOf(b) || '').trim()).length, wid = `${k}_${r.id}`;
+    return `<details class="nb-src"><summary><span class="nb-k">${kind}</span><b>${esc(r.title)}</b><span class="mut">${n} سطر${r.notes.updated_at ? ' · ' + ago(r.notes.updated_at) : ''}</span></summary>
+      <div class="nb-body"><div class="nt-doc nb-ro">${staticHtml(bl, null)}</div>
+      <div class="nb-acts"><a class="btn sm" href="#/notes/${wid}">${ic('edit', 15)} اكتب في دفتره</a>${r.url ? `<a class="btn sm" href="#/watch/${wid}">▶ افتح الفيديو</a>` : ''}</div></div></details>`;
+  }).join('');
+}
+
 export default {
+  notebook: {
+    keep: true,
+    async render() {
+      const src = await sources();
+      return {
+        title: 'الدفتر العام', sub: 'كل اللي بتكتبه في مكان واحد', noSearch: true,
+        html: `<div class="nb">
+          <div class="seg nb-tabs" role="tablist"><button type="button" class="on" data-act="nb-tab" data-v="mine">${ic('edit', 16)} دفتري</button><button type="button" data-act="nb-tab" data-v="all">من الكورسات <span class="nb-c">${src.length}</span></button></div>
+          <input class="inp nb-q" type="search" placeholder="دوّر في كل الدفاتر…" data-input="nb-find" enterkeyhint="search">
+          <div id="nbres" hidden></div>
+          <div id="nbmine" class="nt-page"></div>
+          <div id="nball" hidden>${allHtml(src)}</div>
+        </div>`,
+      };
+    },
+    async after(main) {
+      const host = main.querySelector('#nbmine'); if (!host) return;
+      if (gen && gen.host === host) return;
+      if (gen) gen.inst.destroy();
+      const r = await generalRow();
+      gen = { host, id: r.id, inst: await mountNotes(host, { table: 'notebooks', id: r.id, label: 'دفترك العام: اكتب فيه أي حاجة على طول، وبيتحفظ لوحده' }) };
+    },
+    actions: {
+      'nb-tab'(el) {
+        const v = el.dataset.v;
+        document.querySelectorAll('.nb-tabs button').forEach(b => b.classList.toggle('on', b === el));
+        document.getElementById('nbmine').hidden = v !== 'mine'; document.getElementById('nball').hidden = v !== 'all';
+        gen?.inst?.show?.(v === 'mine');
+      },
+      async 'nb-find'(inp) {
+        const q = inp.value.trim().toLowerCase(), box = document.getElementById('nbres');
+        if (q.length < 2) { box.hidden = true; box.innerHTML = ''; return; }
+        await gen?.inst?.flush?.();
+        const mine = gen ? await one('notebooks', gen.id) : null;
+        const all = [...(mine ? [{ r: mine, k: 'nb', kind: 'دفتري' }] : []), ...(await sources())];
+        const hits = [];
+        for (const { r, k, kind } of all) for (const b of (r.notes && r.notes.blocks) || []) { const t = textOf(b); if (t.toLowerCase().includes(q)) hits.push({ r, k, kind, t }); if (hits.length > 60) break; }
+        const mark = t => { const i = t.toLowerCase().indexOf(q), a = Math.max(0, i - 40); return (a ? '…' : '') + esc(t.slice(a, i)) + '<mark>' + esc(t.slice(i, i + q.length)) + '</mark>' + esc(t.slice(i + q.length, i + q.length + 60)) + '…'; };
+        box.hidden = false;
+        box.innerHTML = hits.length ? `<div class="mut nb-rn">${hits.length > 60 ? 'أكتر من 60' : hits.length} نتيجة</div>` + hits.map(h => `<a class="nb-hit" href="${h.k === 'nb' ? '#/notebook' : `#/notes/${h.k}_${h.r.id}`}"><span class="nb-k">${h.kind}</span><b>${esc(h.r.title || '')}</b><span>${mark(h.t)}</span></a>`).join('') : '<div class="empty">مفيش نتايج.</div>';
+      },
+    },
+  },
+  // صفحة الدفتر لوحدها (من غير فيديو): #/notes/c_<id> أو m_<id>
   notes: {
     keep: true,
     async render(p) {
@@ -764,4 +1126,7 @@ export default {
     },
   },
 };
-window.addEventListener('hashchange', () => { if (page && !location.hash.startsWith('#/notes/')) { page.inst.destroy(); page = null; } });
+window.addEventListener('hashchange', () => {
+  if (page && !location.hash.startsWith('#/notes/')) { page.inst.destroy(); page = null; }
+  if (gen && !location.hash.startsWith('#/notebook')) { gen.inst.destroy(); gen = null; }
+});
