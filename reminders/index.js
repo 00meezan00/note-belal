@@ -437,21 +437,23 @@ async function ytApi(env, path) {
 }
 async function youtubeApi(env, v, list) {
   if (list) {
-    const ids = []; let page = '', total = 0;
+    const ids = [], names = {}; let page = '', total = 0;
     for (let i = 0; i < 8; i++) {   // لحد 400 فيديو (الخطة المجانية بتسمح بـ 50 طلب في المرة)
-      const j = await ytApi(env, `playlistItems?part=contentDetails&maxResults=50&playlistId=${encodeURIComponent(list)}${page ? '&pageToken=' + page : ''}`);
+      const j = await ytApi(env, `playlistItems?part=snippet,contentDetails&maxResults=50&playlistId=${encodeURIComponent(list)}${page ? '&pageToken=' + page : ''}`);
       total = (j.pageInfo && j.pageInfo.totalResults) || total;
-      ids.push(...(j.items || []).map(x => x.contentDetails && x.contentDetails.videoId).filter(Boolean));
+      for (const x of j.items || []) { const id = x.contentDetails && x.contentDetails.videoId; if (id) { ids.push(id); names[id] = x.snippet && x.snippet.title; } }
       if (!j.nextPageToken) break; page = j.nextPageToken;
     }
-    let secs = 0;
+    let secs = 0; const dur = {};
     for (let i = 0; i < ids.length; i += 50) {
       const j = await ytApi(env, `videos?part=contentDetails&id=${ids.slice(i, i + 50).join(',')}`);
-      for (const x of j.items || []) secs += isoSecs(x.contentDetails.duration) || 0;
+      for (const x of j.items || []) { const d = isoSecs(x.contentDetails.duration) || 0; dur[x.id] = d; secs += d; }
     }
+    // قايمة الفيديوهات بأساميها ومددها (المشغّل اللي في النوتة بيعرضها تحت الفيديو)
+    const items = ids.filter(id => dur[id] != null).map(id => ({ id, t: (names[id] || '').slice(0, 140), s: dur[id] }));
     const t = await ytApi(env, `playlists?part=snippet&id=${encodeURIComponent(list)}`).catch(() => ({}));
     const title = t.items && t.items[0] ? t.items[0].snippet.title : null;
-    if (secs) return result(secs, title, { count: total || ids.length, partial: total > ids.length, source: 'قايمة يوتيوب' });
+    if (secs) return result(secs, title, { count: total || ids.length, partial: total > ids.length, source: 'قايمة يوتيوب', items });
     if (!v) return null;
   }
   if (!v) return null;
