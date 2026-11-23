@@ -32,6 +32,89 @@ function ytApi() {
   });
 }
 
+const VV = window.visualViewport;
+const sv = d => `<svg viewBox="0 0 24 24" class="ic" width="20" height="20" aria-hidden="true">${d}</svg>`;
+const G = {
+  more: '<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>',
+  shrink: '<path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/>',
+  grow: '<path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/>',
+  play: '<path d="M8 5.5v13l11-6.5z" fill="currentColor"/>',
+  pause: '<path d="M8 5v14M16 5v14" stroke-width="3"/>',
+  back: '<path d="M9 5l7 7-7 7"/>', x: '<path d="M6 6l12 12M18 6L6 18"/>', open: '<path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>',
+};
+
+// ---------------- الشاشة ----------------
+// الفيديو عايش في "برواز" ثابت فوق الشاشة (#wshell) برّه الصفحة نفسها، عشان:
+// 1) يفضل ظاهر وإنت بتكتب أو بتسأل  2) لو سبت الصفحة وهو شغال، يصغر في الركن ويكمّل وإنت بتتنقل في النوتة
+function shell() {
+  let s = document.getElementById('wshell');
+  if (!s) { s = document.createElement('div'); s.id = 'wshell'; s.hidden = true; document.body.appendChild(s); }
+  return s;
+}
+function buildShell() {
+  const s = shell(), yt = P.yt;
+  s.className = ''; s.hidden = false;
+  s.innerHTML = `
+    <div class="ws-bar">
+      <button type="button" class="ws-ic" data-act="w-back" aria-label="رجوع">${sv(G.back)}</button>
+      <div class="ws-t"><small>${P.kind === 'media' ? 'بتسمع' : 'بتتفرج'}</small><b>${esc(P.row.title)}</b></div>
+      <button type="button" class="ws-ic" data-act="w-menu" aria-label="خيارات الفيديو">${sv(G.more)}</button>
+    </div>
+    <div class="ws-vid"><div id="ytp"></div><div class="vid-msg" id="vmsg">بيحمّل الفيديو…</div></div>
+    <div class="ws-meter" id="wmeter"></div>
+    <div class="ws-tabs" id="wtabs" role="tablist">
+      ${yt.list ? `<button type="button" role="tab" data-act="w-tab" data-v="list">الفيديوهات <span class="ws-n" id="wcount"></span></button>` : ''}
+      <button type="button" role="tab" data-act="w-tab" data-v="notes">${ic('edit', 15)}الدفتر</button>
+      <button type="button" role="tab" data-act="w-tab" data-v="ask"><span class="ai-spark">✦</span>اسأل</button>
+    </div>
+    <div class="ws-away">
+      <button type="button" data-act="w-pp" aria-label="شغّل أو وقّف" id="wpp">${sv(G.pause)}</button>
+      <button type="button" data-act="w-return" aria-label="ارجع للكورس">${sv(G.grow)}</button>
+      <button type="button" data-act="w-close" aria-label="اقفل الفيديو">${sv(G.x)}</button>
+    </div>`;
+  document.body.classList.add('w-on');
+  measure();
+}
+// المسافة اللي المحتوى بيسيبها فوق عشان البرواز. مش بنقيسها لما يصغر عشان الكيبورد، عشان الكلام اللي بتكتبه ميتنططش
+function measure() {
+  const s = shell();
+  if (s.hidden || s.classList.contains('away') || (P && P.kbMini)) return;
+  document.body.style.setProperty('--wsh', s.offsetHeight + 'px');
+}
+// صغير ولا كبير؟ اختيارك بيكسب. لو مختارتش: الفيديوهات = كبير، الدفتر واسأل = صغير، والكيبورد مفتوح = صغير
+const baseMini = () => P.size ? P.size === 'mini' : P.tab !== 'list';
+const kbOpen = () => !!VV && innerHeight - VV.height > 140;
+// البرواز بيمشي مع الشاشة الظاهرة (لما الكيبورد يفتح آيفون بيزق الصفحة)، وبيصغر لوحده وإنت بتكتب
+function place() {
+  const s = document.getElementById('wshell'); if (!s || s.hidden || !P) return;
+  if (s.classList.contains('away')) { s.style.transform = ''; return; }
+  s.style.transform = VV && VV.offsetTop ? `translateY(${VV.offsetTop}px)` : '';
+  const base = baseMini(), mini = base || (kbOpen() && P.size !== 'big');
+  P.kbMini = mini && !base;
+  if (s.classList.contains('mini') !== mini) { s.classList.toggle('mini', mini); paintAll(); }
+  measure();
+}
+let burst = 0;
+function placeSoon() { cancelAnimationFrame(burst); const t0 = performance.now(); const go = () => { place(); if (performance.now() - t0 < 700) burst = requestAnimationFrame(go); }; go(); }
+VV?.addEventListener('resize', placeSoon); VV?.addEventListener('scroll', place);
+window.addEventListener('scroll', place, { passive: true });
+document.addEventListener('focusin', placeSoon); document.addEventListener('focusout', () => setTimeout(placeSoon, 50));
+window.addEventListener('resize', () => { measure(); place(); });
+
+function setTab(v) {
+  if (!P) return;
+  if (v === 'list' && !P.yt.list) v = 'notes';
+  P.tab = v;
+  document.querySelectorAll('#wtabs button').forEach(b => { const on = b.dataset.v === v; b.classList.toggle('on', on); b.setAttribute('aria-selected', on); });
+  const L = document.getElementById('wlist'), N = document.getElementById('wnotes'), A = document.getElementById('wask');
+  if (!L) return;
+  L.hidden = v !== 'list'; N.hidden = v !== 'notes'; A.hidden = v !== 'ask';
+  if (v === 'notes') { if (P.notes && P.notes.show) P.notes.show(true); else openNotes(); } else P.notes?.show?.(false);
+  if (v === 'ask') aiPanel(A, aiCtx());
+  window.scrollTo({ top: 0 });
+  place();
+}
+
 export default {
   watch: {
     keep: true,
@@ -39,37 +122,30 @@ export default {
       const k = kindOf(p.id), id = (p.id || '').slice(2), row = await one(tableOf(k), id);
       if (!row) return { title: 'المشغّل', back: '#/courses', html: '<div class="empty">الكورس ده مش موجود.</div>' };
       const yt = ytOf(row.url);
-      // الصفحة ثابتة (الأرقام بتتملا بعدين)، عشان المزامنة متعيدش رسم الصفحة وتقفل الفيديو
+      // الصفحة نفسها فاضية تقريبًا: الفيديو والتبويبات في البرواز اللي فوق، وهنا المحتوى بس
       return {
-        title: row.title, sub: k === 'media' ? 'بتسمع' : 'بتتفرج', back: '#/courses',
-        html: yt ? `<div class="stack watch" data-wid="${esc(p.id)}">
-          <div class="vid"><div id="ytp"></div><div class="vid-msg" id="vmsg">بيحمّل الفيديو…</div></div>
-          <div class="card stack" style="gap:10px">
-            <div id="wprog"></div>
-            <div class="between"><span class="mut">السرعة</span><div class="seg" id="wspeed" style="flex:1;max-width:260px">${SPEEDS.map(s => `<button type="button" data-act="w-speed" data-v="${s}">${s}x</button>`).join('')}</div></div>
-            <button type="button" class="btn sm dash" data-act="w-start">🏁 خلصت جزء قبل كده؟ حدد نقطة البداية</button>
-          </div>
-          <div class="seg wtabs" id="wtabs">${yt.list ? `<button type="button" class="on" data-act="w-tab" data-v="list">الفيديوهات</button>` : ''}<button type="button"${yt.list ? '' : ' class="on"'} data-act="w-tab" data-v="notes">${ic('edit', 15)}الدفتر</button><button type="button" data-act="w-tab" data-v="ask"><span class="ai-spark">✦</span>اسأل</button></div>
-          <div id="wlist"${yt.list ? '' : ' hidden'}></div>
-          <div id="wnotes"${yt.list ? ' hidden' : ''}></div>
-          <div id="wask" hidden></div>
-          <p class="mut" style="margin:0;line-height:1.7">النوتة بتحسب الوقت اللي اتفرجته فعلًا. لو قدّمت الفيديو، الجزء اللي فوّته مش بيتحسب. والفيديو اللي تخلص 90% منه بيتعلّم إنه خلص.</p>
-          ${openLink(row.url)}
-        </div>` : `<div class="empty">اللينك ده مش يوتيوب، فمش هينفع يشتغل جوه النوتة.<br><br>${openLink(row.url) || 'ضيف لينك يوتيوب للكورس الأول.'}</div>`,
+        title: row.title, sub: k === 'media' ? 'بتسمع' : 'بتتفرج', back: '#/courses', noSearch: true,
+        html: yt ? `<div class="watch" data-wid="${esc(p.id)}"><div id="wlist" hidden></div><div id="wnotes" hidden></div><div id="wask" hidden></div></div>`
+          : `<div class="empty">اللينك ده مش يوتيوب، فمش هينفع يشتغل جوه النوتة.<br><br>${openLink(row.url) || 'ضيف لينك يوتيوب للكورس الأول.'}</div>`,
       };
     },
     async after(main, p) {
       const box = main.querySelector('.watch'); if (!box) return;
-      if (P && P.wid === p.id && P.box === box && box.isConnected) { paintAll(); return; }   // نفس الصفحة اترسمت تاني: المشغّل شغال زي ما هو
+      // نفس الكورس شغال (يمكن كان صغير في الركن): نرجّعه مكانه من غير ما الفيديو يقف
+      if (P && P.wid === p.id && P.player) {
+        if (P.box === box && box.isConnected) { paintAll(); return; }
+        P.box = box; P.notes = null;
+        shell().classList.remove('away'); document.body.classList.add('w-on');
+        paintAll(); setTab(P.tab || (P.yt.list ? 'list' : 'notes')); placeSoon();
+        return;
+      }
       await stop();
       const k = kindOf(p.id), id = p.id.slice(2), row = await one(tableOf(k), id);
       const yt = ytOf(row.url);
-      P = { box, wid: p.id, kind: k, id, row, yt, elId: 'ytp', watch: JSON.parse(JSON.stringify(row.watch || {})), lastPos: {}, wall: 0, sessStart: null, dirty: false, timer: null, player: null };
+      P = { box, wid: p.id, kind: k, id, row, yt, watch: JSON.parse(JSON.stringify(row.watch || {})), lastPos: {}, wall: 0, sessStart: null, dirty: false, timer: null, player: null, tab: yt.list ? 'list' : 'notes', size: '' };
       P.watch.v ||= {};
-      const sp = Number(localStorage.getItem('nota.speed')) || 1;
-      paintAll();
-      if (!yt.list) openNotes();
-      box.classList.toggle('noting', !yt.list);
+      const sp = Number(localStorage.getItem('nota.speed')) || 1; P.speed = sp;
+      buildShell(); paintAll(); setTab(P.tab);
       if (yt.list && !(P.watch.items || []).length) fetchItems();   // أسامي فيديوهات القايمة (من الـ Worker)
       let YT;
       try { YT = await ytApi(); } catch (e) { msg('محتاج نت عشان الفيديو يشتغل.'); return; }
@@ -85,32 +161,41 @@ export default {
             if (yt.list) P.player.cuePlaylist({ listType: 'playlist', list: yt.list, index: idx, startSeconds });
             else P.player.cueVideoById({ videoId: yt.v, startSeconds });
             try { P.player.setPlaybackRate(sp); } catch (e) {}
-            markSpeed(sp);
           },
           onStateChange: e => {
             if (e.data === 1) {
               P.sessStart ||= new Date(); const v = vidNow();
               if (P.pendingSeek && (!P.pendingSeek.v || P.pendingSeek.v === v)) { P.player.seekTo(P.pendingSeek.t, true); P.pendingSeek = null; }
               if (v) P.lastPos[v] = P.player.getCurrentTime();
+              try { P.player.setPlaybackRate(P.speed); } catch (_) {}
             }
             if (e.data === 2 || e.data === 0) save();
             if (e.data === 0) flushDay();
+            paintPP();
           },
-          onError: e => msg([101, 150, 153].includes(e.data) ? 'صاحب الفيديو قافل إنه يشتغل برّه يوتيوب. افتحه من اللينك تحت.' : 'الفيديو ده مش راضي يشتغل. افتحه من اللينك تحت.'),
+          onError: e => msg([101, 150, 153].includes(e.data) ? 'صاحب الفيديو قافل إنه يشتغل برّه يوتيوب. افتحه على يوتيوب من ⋯ فوق.' : 'الفيديو ده مش راضي يشتغل. افتحه على يوتيوب من ⋯ فوق.'),
         },
       });
       P.timer = setInterval(tick, 1000);
     },
     actions: {
-      'w-speed'(el) { const s = Number(el.dataset.v); try { P?.player?.setPlaybackRate(s); } catch (e) {} localStorage.setItem('nota.speed', s); markSpeed(s); },
-      'w-tab'(el) {
-        const v = el.dataset.v;
-        document.querySelectorAll('#wtabs button').forEach(b => b.classList.toggle('on', b === el));
-        document.getElementById('wlist').hidden = v !== 'list'; document.getElementById('wnotes').hidden = v !== 'notes'; document.getElementById('wask').hidden = v !== 'ask';
-        if (v === 'notes') openNotes(); else P?.notes?.show?.(false);
-        if (v === 'notes' && P?.notes?.show) P.notes.show(true);
-        if (v === 'ask') aiPanel(document.getElementById('wask'), aiCtx());
-        P?.box.classList.toggle('noting', v !== 'list');
+      'w-tab'(el) { setTab(el.dataset.v); },
+      'w-speed'() {   // زرار واحد بيلف على السرعات
+        if (!P) return;
+        const s = SPEEDS[(SPEEDS.indexOf(P.speed) + 1) % SPEEDS.length] || 1;
+        P.speed = s; try { P.player?.setPlaybackRate(s); } catch (e) {}
+        localStorage.setItem('nota.speed', s); paintAll();
+      },
+      'w-size'() { if (!P) return; P.size = shell().classList.contains('mini') ? 'big' : 'mini'; if (P.size === 'big' && kbOpen()) document.activeElement?.blur(); place(); },
+      'w-back'() { if (history.length > 1) history.back(); else location.hash = '#/courses'; },
+      'w-menu'() {
+        if (!P) return;
+        openSheet('الفيديو', `<div class="stack" style="gap:8px">
+          <button class="btn" data-act="w-start">🏁 خلصت جزء قبل كده؟ حدد نقطة البداية</button>
+          ${P.row.url ? `<a class="btn" href="${esc(/^https?:/i.test(P.row.url) ? P.row.url : 'https://' + P.row.url)}" target="_blank" rel="noopener">${sv(G.open)} افتحه على يوتيوب</a>` : ''}
+          <p class="mut" style="margin:6px 2px 0;line-height:1.7">النوتة بتحسب الوقت اللي اتفرجته فعلًا: لو قدّمت الفيديو، الجزء اللي فوّته مش بيتحسب. والفيديو اللي تخلص 90% منه بيتعلّم إنه خلص.</p>
+          <p class="mut" style="margin:0 2px;line-height:1.7">لو سبت الصفحة والفيديو شغال، هيصغر في الركن ويكمّل وإنت بتتنقل في النوتة.</p>
+        </div>`);
       },
       ...aiGlobal,
       'w-done'(el) {   // علّم الفيديو إنه خلص (أو رجّعه)
@@ -124,7 +209,7 @@ export default {
         if (!P) return;
         const items = itemsNow();
         openSheet('نقطة البداية', `<p class="mut" style="margin:0;line-height:1.7">لو اتفرجت على جزء من الكورس قبل كده، قولّي وصلت لحد فين. اللي قبله هيتحسب إنك خلصته، والفيديو هيبدأ من عندك.</p>
-          ${P.yt.list ? `<label class="field"><span>خلصت الفيديوهات لحد</span><select name="upto"><option value="0">ولا فيديو لسه</option>${opts(items.map((x, i) => [i + 1, `${i + 1}. ${x.t || 'فيديو ' + (i + 1)}`]), P.yt.list ? doneUpTo(items) : 0)}</select></label>
+          ${P.yt.list ? `<label class="field"><span>خلصت الفيديوهات لحد</span><select name="upto"><option value="0">ولا فيديو لسه</option>${opts(items.map((x, i) => [i + 1, `${i + 1}. ${x.t || 'فيديو ' + (i + 1)}`]), doneUpTo(items))}</select></label>
           <label class="field"><span>وفي الفيديو اللي بعده وقفت عند (اختياري)</span><input name="pos" inputmode="text" placeholder="مثلًا 12:30 (دقايق:ثواني)"></label>`
           : `<label class="field"><span>وقفت عند</span><input name="pos" inputmode="text" autofocus placeholder="مثلًا 1:05:30 أو 12:30"></label>`}
           <small class="mut">الوقت يتكتب زي ما هو مكتوب على يوتيوب: 12:30 يعني 12 دقيقة و30 ثانية، و1:05:30 يعني ساعة و5 دقايق.</small>
@@ -154,10 +239,16 @@ export default {
         if (!P?.player) return;
         const items = P.watch.items || [], i = items.findIndex(x => x.id === el.dataset.v);
         try { if (P.yt.list && i >= 0) P.player.playVideoAt(i); else P.player.loadVideoById(el.dataset.v); } catch (e) {}
-        window.scrollTo({ top: 0, behavior: 'smooth' });
       },
     },
   },
+};
+
+// أزرار البرواز الصغير (بتشتغل من أي صفحة في النوتة)
+export const playerGlobal = {
+  'w-pp'() { if (!P?.player) return; try { P.player.getPlayerState() === 1 ? P.player.pauseVideo() : P.player.playVideo(); } catch (e) {} },
+  'w-return'() { if (P) location.hash = '#/watch/' + P.wid; },
+  'w-close'() { stop(); },
 };
 
 // ---------------- الحساب ----------------
@@ -233,7 +324,7 @@ function aiCtx() {
     wid: P.wid, title: P.row.title,
     video: () => { const v = vidNow() || P.yt.v || P.watch.last; const it = itemsNow().find(x => x.id === v); return v ? { v, url: `https://www.youtube.com/watch?v=${v}`, title: (it && it.t) || P.row.title } : null; },
     now: () => { try { return P.player.getCurrentTime(); } catch (e) { return 0; } },
-    seek: t => { try { P.player.seekTo(t, true); P.player.playVideo(); } catch (e) {} window.scrollTo({ top: 0, behavior: 'smooth' }); },
+    seek: t => { try { P.player.seekTo(t, true); P.player.playVideo(); } catch (e) {} },
     cache: () => (P.watch.ai ||= {}),
     keep: () => { const A = P.watch.ai || {}, ks = Object.keys(A); if (ks.length > 20) for (const k of ks.slice(0, ks.length - 20)) delete A[k]; P.dirty = true; save(); },
     toNotes: async blocks => { await openNotes(); P.notes?.show?.(false); P.notes?.append?.(blocks); },
@@ -253,7 +344,6 @@ async function openNotes() {
         if (v && v !== vidNow() && P.yt.list) { const i = itemsNow().findIndex(x => x.id === v); if (i >= 0) { P.pendingSeek = { t, v }; P.player.playVideoAt(i); return; } }
         P.player.seekTo(t, true); P.player.playVideo();
       } catch (e) {}
-      window.scrollTo({ top: 0, behavior: 'smooth' });
     },
   });
 }
@@ -264,12 +354,25 @@ async function stop() {
   try { P.notes && P.notes.destroy && P.notes.destroy(); } catch (e) {}
   aiReset();
   await save(); await flushDay();
-  try { P.player && P.player.destroy(); } catch (e) {}
+  try { P && P.player && P.player.destroy(); } catch (e) {}
   P = null;
+  const s = document.getElementById('wshell'); if (s) { s.hidden = true; s.innerHTML = ''; s.className = ''; s.style.transform = ''; }
+  document.body.classList.remove('w-on');
 }
-// لما تسيب الصفحة أو تقفل التطبيق: بنحفظ على طول
-window.addEventListener('hashchange', () => { if (P && !location.hash.startsWith('#/watch/' + P.wid)) stop(); });
-document.addEventListener('visibilitychange', () => { if (document.hidden && P) { try { P.player?.pauseVideo(); } catch (e) {} save(); flushDay(); } });
+// سبت صفحة الفيديو: لو شغال يصغر في الركن ويكمّل، ولو واقف يتقفل ويتحفظ
+function leave() {
+  if (!P) return;
+  let playing = false; try { playing = P.player && P.player.getPlayerState() === 1; } catch (e) {}
+  if (!playing) return stop();
+  try { P.notes && P.notes.destroy && P.notes.destroy(); } catch (e) {}
+  P.notes = null; aiReset(); save();
+  document.body.classList.remove('w-on');
+  const s = shell(); s.classList.remove('mini'); s.classList.add('away'); s.style.transform = '';
+  paintPP();
+}
+window.addEventListener('hashchange', () => { if (P && !location.hash.startsWith('#/watch/' + P.wid)) leave(); });
+// لما تقفل التطبيق: بنحفظ بس، ومش بنوقّف الفيديو بنفسنا (آيفون هو اللي بيقرر يكمّله ولا لأ)
+document.addEventListener('visibilitychange', () => { if (document.hidden && P) { save(); flushDay(); } });
 window.addEventListener('pagehide', () => { if (P) { save(); flushDay(); } });
 
 async function fetchItems() {
@@ -286,22 +389,47 @@ async function fetchItems() {
 
 // ---------------- الرسم ----------------
 function msg(t) { const m = document.getElementById('vmsg'); if (m) { m.textContent = t; m.hidden = !t; } }
-function markSpeed(s) { document.querySelectorAll('#wspeed button').forEach(b => b.classList.toggle('on', Number(b.dataset.v) === s)); }
+function paintPP() {
+  const b = document.getElementById('wpp'); if (!b || !P) return;
+  let on = false; try { on = P.player.getPlayerState() === 1; } catch (e) {}
+  b.innerHTML = sv(on ? G.pause : G.play); b.setAttribute('aria-label', on ? 'وقّف' : 'شغّل');
+}
+// العدّاد تحت الفيديو: خانة لكل فيديو في القايمة (أو 20 خانة للفيديو الواحد) بتتملي بالكهرمان وإنت بتتفرج
+function meterCells(t) {
+  const V = P.watch.v, items = P.watch.items || [], cur = vidNow() || P.watch.last;
+  if (P.yt.list && t.ids.length) {
+    const ids = t.ids, n = ids.length, per = Math.ceil(n / 48);   // قايمة طويلة: كل خانة كذا فيديو
+    const cells = [];
+    for (let i = 0; i < n; i += per) {
+      const grp = ids.slice(i, i + per);
+      const d = grp.reduce((x, id) => x + (t.dOf(id) || 0), 0), w = grp.reduce((x, id) => x + Math.min(t.dOf(id) || Infinity, (V[id] && V[id].w) || 0), 0);
+      const done = grp.every(isDone), f = done ? 100 : d ? Math.min(100, w / d * 100) : 0;
+      cells.push(`<i class="${done ? 'ok' : ''}${grp.includes(cur) ? ' here' : ''}" style="--f:${f.toFixed(1)}%"></i>`);
+    }
+    return cells.join('');
+  }
+  const pct = t.d ? t.w / t.d * 100 : 0;
+  return Array.from({ length: 20 }, (_, i) => { const f = Math.max(0, Math.min(100, (pct - i * 5) * 20)); return `<i class="${pct >= 99 ? 'ok' : ''}" style="--f:${f.toFixed(1)}%"></i>`; }).join('');
+}
 function paintAll() {
   if (!P) return;
-  const t = totals(), pct = t.d ? Math.min(100, t.w / t.d * 100) : 0;
-  const pe = document.getElementById('wprog');
-  if (pe) pe.innerHTML = `${bat(pct, pct >= 99 ? 'done' : 'run')}
-    <div class="mut" style="font-size:14px;line-height:1.6">${t.w >= 60 ? `اتفرجت ${durWords(t.w / 60)}` : t.w > 5 ? 'اتفرجت أقل من دقيقة' : 'لسه مبدأتش'}${t.d ? ` من ${durWords(t.d / 60)}` : ''}${P.yt.list && t.count ? ` · خلصت ${t.done} من ${t.count} فيديو` : ''}</div>`;
+  const t = totals(), pct = t.d ? Math.min(100, t.w / t.d * 100) : 0, mini = shell().classList.contains('mini');
+  const me = document.getElementById('wmeter');
+  if (me) me.innerHTML = `<div class="wm-cells" role="img" aria-label="اتفرجت ${Math.round(pct)}%">${meterCells(t)}</div>
+    <div class="wm-row">
+      <span class="wm-txt"><b class="num">${Math.round(pct)}%</b>${P.yt.list && t.count ? ` · <span class="num">${t.done}/${t.count}</span> فيديو` : ''}${!mini && t.w >= 60 ? ` · اتفرجت ${durWords(t.w / 60)}${t.d ? ` من ${durWords(t.d / 60)}` : ''}` : ''}</span>
+      <button type="button" class="wm-chip num" data-act="w-speed" aria-label="السرعة ${P.speed}x، دوس تغيّرها">${P.speed}x</button>
+      <button type="button" class="wm-chip wm-ic" data-act="w-size" aria-label="${mini ? 'كبّر الفيديو' : 'صغّر الفيديو'}">${sv(mini ? G.grow : G.shrink)}</button>
+    </div>`;
+  const cn = document.getElementById('wcount'); if (cn) cn.textContent = t.count ? `${t.done}/${t.count}` : '';
   const le = document.getElementById('wlist'); if (!le || !P.yt.list) return;
   const items = P.watch.items || [], V = P.watch.v, cur = P.watch.last;
-  if (!items.length) { le.innerHTML = `<div class="mut" style="font-size:13px">${WORKER ? 'أسامي فيديوهات القايمة بتظهر هنا لما مفتاح يوتيوب يبقى في الـ Worker.' : ''}</div>`; return; }
-  le.innerHTML = `<div class="card list wl">${items.map((x, i) => {
-    const r = V[x.id] || {}, d = r.d || x.s || 0, p = d ? Math.min(1, (r.w || 0) / d) : 0, done = isDone(x.id);
-    return `<div class="wl-it${x.id === cur ? ' here' : ''}">
-      <button type="button" class="wl-n${done ? ' ok' : ''}" data-act="w-done" data-v="${x.id}" aria-label="${done ? 'رجّعه مش متفرّج عليه' : 'علّمه إنه خلص'}">${done ? ic('check', 14) : i + 1}</button>
+  if (!items.length) { le.innerHTML = `<div class="empty" style="padding:30px 10px">${WORKER ? 'أسامي فيديوهات القايمة بتظهر هنا لما مفتاح يوتيوب يبقى في الـ Worker.' : 'مفيش قايمة.'}</div>`; return; }
+  le.innerHTML = `<ol class="wl">${items.map((x, i) => {
+    const r = V[x.id] || {}, d = r.d || x.s || 0, p = d ? Math.min(1, (r.w || 0) / d) : 0, done = isDone(x.id), here = x.id === cur;
+    return `<li class="wl-it${here ? ' here' : ''}${done ? ' ok' : ''}">
+      <button type="button" class="wl-n" data-act="w-done" data-v="${x.id}" aria-label="${done ? 'رجّعه مش متفرّج عليه' : 'علّمه إنه خلص'}">${done ? ic('check', 14) : `<span class="num">${i + 1}</span>`}</button>
       <button type="button" class="wl-go" data-act="w-play" data-v="${x.id}"><span class="wl-t">${esc(x.t || 'فيديو ' + (i + 1))}</span>
-        <span class="mut" style="font-size:12px">${mmss(d)}${p > 0.02 && !done ? ` · اتفرجت ${Math.round(p * 100)}%` : ''}</span></button>
-      ${x.id === cur ? `<span class="tag amb">هنا</span>` : ''}</div>`; }).join('')}</div>
-    <div class="mut" style="font-size:12px;padding:6px 2px">دوس على الرقم عشان تعلّم الفيديو إنه خلص (أو ترجّعه).</div>`;
+        <span class="wl-m"><span class="num">${mmss(d)}</span>${here ? '<b>هنا</b>' : ''}${p > 0.02 && !done ? `<span class="wl-bar"><i style="width:${Math.round(p * 100)}%"></i></span>` : ''}</span></button></li>`; }).join('')}</ol>
+    <p class="mut" style="font-size:12px;padding:8px 4px 0;margin:0">دوس على الرقم عشان تعلّم الفيديو إنه خلص أو ترجّعه.</p>`;
 }

@@ -108,7 +108,7 @@ export async function mountNotes(host, { table, id, now, seek, label }) {
   // شريط الأدوات: بيتحط تحت خالص، ولما الكيبورد يفتح بيطلع فوقه
   const dock = document.createElement('div');
   dock.className = 'nt-dock'; dock.setAttribute('role', 'toolbar'); dock.setAttribute('aria-label', 'أدوات الدفتر');
-  dock.innerHTML = `
+  dock.innerHTML = `<div class="nt-dk">
     <div class="nt-pan" data-p="fmt" hidden>
       <div class="nt-row nt-styles">${STYLES.map(([k, l]) => `<button type="button" data-t="${k}" class="nt-st-${k}">${l}</button>`).join('')}</div>
       <div class="nt-row"><button type="button" data-cmd="bold" class="nt-ib" aria-label="عريض"><b>B</b></button><button type="button" data-cmd="italic" class="nt-ib" aria-label="مائل"><i>I</i></button><button type="button" data-cmd="underline" class="nt-ib" aria-label="تحته خط"><u>U</u></button><button type="button" data-cmd="strikeThrough" class="nt-ib" aria-label="عليه خط"><s>S</s></button><button type="button" data-cmd="hilite" class="nt-ib nt-hl" aria-label="هايلايتر">🖍</button>
@@ -117,26 +117,19 @@ export async function mountNotes(host, { table, id, now, seek, label }) {
       <div class="nt-row nt-dots"><span class="mut nt-plab">اللون</span>${dots('color', '')}</div>
       <div class="nt-row"><span class="mut nt-plab">حجم الخط</span><button type="button" data-a="fs" data-d="-1" aria-label="صغّر الخط">أ−</button><span class="nt-fsv">${FS}</span><button type="button" data-a="fs" data-d="1" aria-label="كبّر الخط">أ+</button></div>
     </div>
-    <div class="nt-pan" data-p="more" hidden>
-      <div class="nt-grid2">
-        <button type="button" data-a="tasknow">☑️ اعمل السطر مهمة النهاردة</button>
-        <button type="button" data-a="lesson">📘 ده درس اتعلمته</button>
-        <button type="button" data-a="hr">➖ خط فاصل</button>
-        <button type="button" data-a="tpl">🧩 قالب ملخص كورس</button>
-        <button type="button" data-a="panel" data-p="toc">📑 الفهرس</button>
-        <button type="button" data-a="panel" data-p="find">🔎 دوّر في الدفتر</button>
-        <button type="button" data-a="foldall">🗂 اطوي / افتح الأقسام</button>
-        <button type="button" data-a="map">🧠 خريطة ذهنية</button>
-        <button type="button" data-a="pdf">📄 نزّله PDF</button>
-        <button type="button" data-a="up">↑ طلّع السطر</button>
-        <button type="button" data-a="down">↓ نزّل السطر</button>
-        <button type="button" data-a="del" class="bad">🗑 امسح السطر</button>
-      </div>
+    <div class="nt-pan nt-menu" data-p="more" hidden>
+      <div class="nt-mg"><span class="nt-mgl">السطر ده</span><div class="nt-row">
+        <button type="button" data-a="tasknow">☑️ مهمة النهاردة</button><button type="button" data-a="lesson">📘 درس اتعلمته</button>
+        <button type="button" data-a="up" aria-label="طلّع السطر">↑</button><button type="button" data-a="down" aria-label="نزّل السطر">↓</button><button type="button" data-a="del" class="bad">امسحه</button></div></div>
+      <div class="nt-mg"><span class="nt-mgl">ضيف</span><div class="nt-row">
+        <button type="button" data-a="hr">➖ خط فاصل</button><button type="button" data-a="tpl">🧩 قالب ملخص كورس</button></div></div>
+      <div class="nt-mg"><span class="nt-mgl">الدفتر</span><div class="nt-row">
+        <button type="button" data-a="panel" data-p="toc">📑 الفهرس</button><button type="button" data-a="panel" data-p="find">🔎 دوّر</button>
+        <button type="button" data-a="foldall">🗂 اطوي الأقسام</button><button type="button" data-a="map">🧠 خريطة</button><button type="button" data-a="pdf">📄 PDF</button></div></div>
     </div>
     <div class="nt-pan" data-p="grid" hidden><div class="mut nt-plab nt-glab">اختار حجم الجدول</div><div class="nt-gp">${Array.from({ length: 8 }, (_, r) => Array.from({ length: 8 }, (_, c) => `<button type="button" data-a="mktable" data-r="${r + 1}" data-c="${c + 1}"></button>`).join('')).join('')}</div></div>
     <div class="nt-pan" data-p="toc" hidden><div class="nt-toc"></div></div>
     <div class="nt-pan" data-p="find" hidden><div class="nt-row"><input class="inp nt-q" placeholder="دوّر على كلمة…" enterkeyhint="search"><span class="mut nt-qn"></span><button type="button" data-a="qprev" aria-label="اللي قبله">↑</button><button type="button" data-a="qnext" aria-label="اللي بعده">↓</button></div></div>
-    <div class="nt-pan nt-tpan" data-p="table" hidden><div class="nt-row"><span class="mut nt-plab">الجدول</span><button type="button" data-a="row+">+ صف</button><button type="button" data-a="col+">+ عمود</button><button type="button" data-a="row-">− صف</button><button type="button" data-a="col-">− عمود</button><button type="button" data-a="fit">رجّع المقاسات</button></div><div class="nt-row nt-dots"><span class="mut nt-plab">لون الصف</span>${dots('color', '')}</div></div>
     <div class="nt-main">
       <button type="button" data-a="panel" data-p="fmt" aria-label="شكل الكلام"><span class="nt-aa" dir="ltr">Aa</span></button>
       <button type="button" data-t="todo" aria-label="مهام">${svg(I.todo)}</button>
@@ -148,7 +141,7 @@ export async function mountNotes(host, { table, id, now, seek, label }) {
       <button type="button" data-a="redo" aria-label="إعادة">${svg(I.redo)}</button>
       <button type="button" data-a="panel" data-p="more" aria-label="أدوات أكتر">${svg(I.more)}</button>
       <button type="button" data-a="kb" class="nt-kb" aria-label="اقفل الكيبورد">${svg(I.kb)}</button>
-    </div>`;
+    </div></div>`;
   document.body.appendChild(dock);
   document.body.classList.add('nt-open');
 
@@ -157,14 +150,18 @@ export async function mountNotes(host, { table, id, now, seek, label }) {
   forkBtn.type = 'button'; forkBtn.className = 'nt-forkbtn'; forkBtn.dataset.a = 'fork'; forkBtn.setAttribute('aria-label', 'اعمل فرع من السطر ده'); forkBtn.textContent = '↘';
 
   // ---------- الرسم ----------
-  function tableHtml(b) {
+  // ed = true: جوه محرر الجدول (خانات بتتكتب + أزرار + وشد المقاسات). من غيرها: معاينة في الدفتر تدوس عليها تفتح المحرر
+  function tableHtml(b, ed) {
     const R = b.rows, nc = R[0].length;
     b.cw = Array.from({ length: nc }, (_, i) => (b.cw || [])[i] || COLW);
+    if (!ed) return `<div class="nt-tw nt-prev" role="button" tabindex="0" aria-label="جدول ${R.length} × ${nc}، دوس عشان تعدّله"><table><tbody>
+      ${R.slice(0, 8).map((r, ri) => `<tr class="${(b.rc || [])[ri] ? 'nt-c-' + b.rc[ri] : ''}">${r.map((x, ci) => `<${ri ? 'td' : 'th'} data-r="${ri}" data-c="${ci}" style="min-width:${Math.min(b.cw[ci], 180)}px">${esc(x) || '&nbsp;'}</${ri ? 'td' : 'th'}>`).join('')}</tr>`).join('')}
+      </tbody></table></div><button type="button" class="nt-topen" data-a="topen" data-bid="${b.id}"><span>✎ عدّل الجدول</span><span class="mut">${R.length} صف · ${nc} عمود</span>${R.length > 8 ? `<span class="mut">+${R.length - 8} صف</span>` : ''}</button>`;
     const W = 30 + b.cw.reduce((s, w) => s + w, 0);
-    return `<div class="nt-tw"><table style="width:${W}px;--tw:${W}px"><colgroup><col style="width:30px">${b.cw.map(w => `<col style="width:${w}px">`).join('')}</colgroup>
-      <tr class="nt-hrow"><td class="nt-rh"></td>${b.cw.map((_, ci) => `<td class="nt-ch"><button type="button" class="nt-cplus" data-a="colat" data-c="${ci}" aria-label="عمود جديد بعد ده">+</button><span class="nt-cgrip" data-cg="${ci}" aria-hidden="true"></span></td>`).join('')}</tr>
-      ${R.map((r, ri) => { const h = (b.rh || [])[ri], c = (b.rc || [])[ri]; return `<tr class="nt-row-t${c ? ' nt-c-' + c : ''}"${h ? ` style="height:${h}px"` : ''}><td class="nt-rh"><button type="button" class="nt-rplus" data-a="rowat" data-r="${ri}" aria-label="صف جديد تحت ده">+</button><span class="nt-rgrip" data-rg="${ri}" aria-hidden="true"></span></td>${r.map((x, ci) => { const tg = ri === 0 ? 'th' : 'td'; return `<${tg} contenteditable="true" data-r="${ri}" data-c="${ci}">${esc(x)}</${tg}>`; }).join('')}</tr>`; }).join('')}
-    </table></div>`;
+    return `<table class="nt-et" style="width:${W}px;--tw:${W}px"><colgroup><col style="width:30px">${b.cw.map(w => `<col style="width:${w}px">`).join('')}</colgroup>
+      <tr class="nt-hrow"><td class="nt-rh nt-corner"></td>${b.cw.map((_, ci) => `<td class="nt-ch"><span class="nt-cl">${ci + 1}</span><span class="nt-cgrip" data-cg="${ci}" aria-hidden="true"></span></td>`).join('')}</tr>
+      ${R.map((r, ri) => { const h = (b.rh || [])[ri], c = (b.rc || [])[ri]; return `<tr class="nt-row-t${c ? ' nt-c-' + c : ''}"${h ? ` style="height:${h}px"` : ''}><td class="nt-rh"><span class="nt-rl">${ri ? ri : '★'}</span><span class="nt-rgrip" data-rg="${ri}" aria-hidden="true"></span></td>${r.map((x, ci) => { const tg = ri === 0 ? 'th' : 'td'; return `<${tg} contenteditable="true" data-r="${ri}" data-c="${ci}">${esc(x)}</${tg}>`; }).join('')}</tr>`; }).join('')}
+    </table>`;
   }
   function refsHtml(b) {
     const chips = [];
@@ -180,7 +177,7 @@ export async function mountNotes(host, { table, id, now, seek, label }) {
     const ts = b.t != null ? `<button type="button" class="nt-ts" data-ts="${b.t}" data-v="${esc(b.v || '')}" contenteditable="false">⏱ ${b.vn ? `فيديو ${b.vn} · ` : ''}<span dir="ltr">${mmss(b.t)}</span></button>` : '';
     const ind = Math.min(MAXI, b.indent || 0), col = b.c ? ' nt-c-' + b.c : '', h = hid ? ' nt-hid' : '';
     if (b.type === 'hr') return `<div class="nt-b nt-hr${h}" data-id="${b.id}" tabindex="0" aria-label="خط فاصل"><hr></div>`;
-    if (b.type === 'table') return `<div class="nt-b nt-table${h}" data-id="${b.id}" style="--ind:${ind}">${ts}${tableHtml(b)}${refsHtml(b)}</div>`;
+    if (b.type === 'table') return `<div class="nt-b nt-table${h}" data-id="${b.id}" style="--ind:${ind}">${ts}${tableHtml(b, false)}${refsHtml(b)}</div>`;
     const done = b.type === 'todo' && (b.task && TASKS[b.task] ? TASKS[b.task].done : b.done);
     const pre = LV[b.type] ? `<button type="button" class="nt-fold" data-a="fold" data-bid="${b.id}" contenteditable="false" aria-label="${b.fold ? 'افتح القسم' : 'اطوي القسم'}" aria-expanded="${!b.fold}">${b.fold ? '‹' : '⌄'}</button>`
       : b.type === 'todo' ? `<button type="button" class="nt-chk${done ? ' on' : ''}" data-a="check" data-bid="${b.id}" contenteditable="false" aria-label="${done ? 'رجّعها' : 'خلصت'}">${done ? ic('check', 14) : ''}</button>`
@@ -202,12 +199,10 @@ export async function mountNotes(host, { table, id, now, seek, label }) {
       return blockHtml(b, num, hid);
     }).join('');
     doc.appendChild(forkBtn);
-    doc.querySelectorAll('.nt-table table').forEach(t => t.style.setProperty('--th', t.offsetHeight + 'px'));
     if (fresh) for (const fid of fresh) doc.querySelector(`[data-id="${fid}"]`)?.classList.add('nt-new');
     if (focusId) {
       const h = doc.querySelector(`[data-id="${focusId}"]`);
-      if (cellRC) placeCaret(h?.querySelector(`[data-r="${cellRC[0]}"][data-c="${cellRC[1]}"]`) || h?.querySelector('th,td[contenteditable]'), null);
-      else placeCaret(h?.querySelector('.nt-tx') || h?.querySelector('th,td[contenteditable]'), pos);
+      if (h?.querySelector('.nt-tx')) placeCaret(h.querySelector('.nt-tx'), pos);
     }
     paintBar(); if (panel === 'toc') paintToc(); if (panel === 'find') runFind(false);
   }
@@ -218,10 +213,8 @@ export async function mountNotes(host, { table, id, now, seek, label }) {
     dock.querySelector('[data-a=fork]').classList.toggle('on', !!b && b.type === 'arrow');
     const colNow = isT ? (b.rc || [])[cell ? cell[0] : -1] : b?.c;
     dock.querySelectorAll('[data-a=color]').forEach(d => d.classList.toggle('on', (colNow || '') === d.dataset.col));
-    if (isT && panel !== 'table' && !['fmt', 'more', 'toc', 'find'].includes(panel)) showPanel('table', true);
-    if (!isT && panel === 'table') showPanel('', true);
     const el = b && !isT && b.type !== 'hr' && doc.querySelector(`[data-id="${b.id}"]`);
-    if (el && !fork && !el.classList.contains('nt-hid')) { forkBtn.hidden = false; forkBtn.style.top = `${el.offsetTop + Math.min(el.offsetHeight, 40) / 2 - 15}px`; } else forkBtn.hidden = true;
+    if (el && !fork && !el.classList.contains('nt-hid') && doc.contains(document.activeElement)) { forkBtn.hidden = false; forkBtn.style.top = `${el.offsetTop + Math.min(el.offsetHeight, 40) / 2 - 15}px`; } else forkBtn.hidden = true;
     paintUndo(); paintCmds();
   }
   function paintCmds() {
@@ -297,7 +290,9 @@ export async function mountNotes(host, { table, id, now, seek, label }) {
   doc.addEventListener('click', e => {
     const ts = e.target.closest('.nt-ts'); if (ts && seek) { e.preventDefault(); seek(Number(ts.dataset.ts), ts.dataset.v || null); return; }
     const hr = e.target.closest('.nt-hr'); if (hr) { cur = hr.dataset.id; hr.focus(); paintBar(); }
+    const tp = e.target.closest('.nt-prev'); if (tp) { const cellEl = e.target.closest('[data-r]'); openTable(tp.closest('.nt-b').dataset.id, cellEl ? [+cellEl.dataset.r, +cellEl.dataset.c] : [0, 0]); }
   });
+  doc.addEventListener('keydown', e => { const tp = e.target.closest?.('.nt-prev'); if (tp && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openTable(tp.closest('.nt-b').dataset.id, [0, 0]); } });
   doc.addEventListener('keydown', e => {
     const el = e.target;
     if (el.matches('.nt-fork-in')) {
@@ -343,23 +338,105 @@ export async function mountNotes(host, { table, id, now, seek, label }) {
   });
 
   // ---------- تكبير الصف أو العمود بإيدك ----------
-  doc.addEventListener('pointerdown', e => {
-    if (e.target.closest('button[data-a]')) { e.preventDefault(); return; }
+  doc.addEventListener('pointerdown', e => { if (e.target.closest('button[data-a]')) e.preventDefault(); });
+  function onGrip(e) {
+    if (e.target.closest('button[data-ta]')) { e.preventDefault(); return; }
     const g = e.target.closest('.nt-rgrip, .nt-cgrip'); if (!g) return;
     e.preventDefault();
-    const blk = g.closest('.nt-b'), b = get(blk.dataset.id), tableEl = blk.querySelector('table');
+    const blk = g.closest('[data-id]'), b = get(blk.dataset.id), tableEl = blk.querySelector('table');
     const isRow = g.classList.contains('nt-rgrip'), k = +(isRow ? g.dataset.rg : g.dataset.cg);
     const tr = isRow ? g.closest('tr') : null, colEl = isRow ? null : tableEl.querySelectorAll('col')[k + 1];
-    const start = isRow ? tr.offsetHeight : b.cw[k], x0 = e.clientX, y0 = e.clientY, rtl = getComputedStyle(doc).direction === 'rtl';
+    const start = isRow ? tr.offsetHeight : b.cw[k], x0 = e.clientX, y0 = e.clientY, rtl = getComputedStyle(blk).direction === 'rtl';
     g.classList.add('drag'); try { g.setPointerCapture(e.pointerId); } catch (_) {}
     const move = ev => {
       if (isRow) { const h = Math.max(MINH, Math.round(start + ev.clientY - y0)); tr.style.height = h + 'px'; (b.rh ||= [])[k] = h; }
       else { const w = Math.max(MINW, Math.round(start + (rtl ? x0 - ev.clientX : ev.clientX - x0))); colEl.style.width = w + 'px'; b.cw[k] = w; const W = 30 + b.cw.reduce((s, v) => s + v, 0); tableEl.style.width = W + 'px'; tableEl.style.setProperty('--tw', W + 'px'); }
-      if (isRow) tableEl.style.setProperty('--th', tableEl.offsetHeight + 'px');
     };
     const up = () => { g.classList.remove('drag'); g.removeEventListener('pointermove', move); g.removeEventListener('pointerup', up); g.removeEventListener('pointercancel', up); save(); };
     g.addEventListener('pointermove', move); g.addEventListener('pointerup', up); g.addEventListener('pointercancel', up);
-  });
+  }
+
+  // ---------- محرر الجدول: بيفتح على الشاشة كلها، الصف الأول وعمود الأرقام ثابتين وإنت بتتحرك ----------
+  let TE = null;
+  function openTable(bid, rc) {
+    const b = get(bid); if (!b) return;
+    syncText(); closeTable(true); showPanel('', true); remember();
+    cur = bid;
+    const ov = document.createElement('div');
+    ov.className = 'nt-ted'; ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-label', 'تعديل الجدول');
+    ov.innerHTML = `<div class="nt-ted-hd"><button type="button" class="nt-ted-x" data-ta="del" aria-label="امسح الجدول">🗑</button><b>الجدول</b><span class="mut num nt-ted-sz"></span><span style="flex:1"></span><button type="button" class="nt-ted-ok" data-ta="done">تم</button></div>
+      <div class="nt-ted-sc" data-id="${b.id}"></div>
+      <div class="nt-ted-bar">
+        <div class="nt-row nt-dots nt-ted-cols" hidden><span class="mut nt-plab">لون الصف</span>${dots('color', '').replace(/data-a="color"/g, 'data-ta="color"')}</div>
+        <div class="nt-row">
+          <button type="button" data-ta="row+">+ صف</button><button type="button" data-ta="col+">+ عمود</button>
+          <button type="button" data-ta="row-">− صف</button><button type="button" data-ta="col-">− عمود</button>
+          <button type="button" data-ta="pal">🎨 لون</button><button type="button" data-ta="fit">رجّع المقاسات</button>
+        </div>
+      </div>`;
+    document.body.appendChild(ov);
+    dock.hidden = true;
+    TE = { b, ov, sc: ov.querySelector('.nt-ted-sc'), cell: rc || [0, 0] };
+    ov.addEventListener('pointerdown', e => { if (e.target.closest('button')) e.preventDefault(); onGrip(e); });
+    ov.addEventListener('input', e => { const el = e.target; if (!el.matches('th,td')) return; b.rows[+el.dataset.r][+el.dataset.c] = clean(el); save(); });
+    ov.addEventListener('focusin', e => { const el = e.target; if (!el.matches('th,td')) return; TE.cell = [+el.dataset.r, +el.dataset.c]; markCell(); });
+    ov.addEventListener('keydown', e => {
+      if (e.key === 'Escape') { e.preventDefault(); return closeTable(); }
+      const el = e.target; if (!el.matches('th,td')) return;
+      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {   // إنتر = الخانة اللي تحتها (ولو آخر صف: صف جديد)
+        e.preventDefault(); const [r, c] = TE.cell;
+        if (r + 1 >= b.rows.length) { tAct('row+'); } else focusCell(r + 1, c);
+      }
+    });
+    ov.addEventListener('click', e => { const btn = e.target.closest('button[data-ta]'); if (btn) { e.preventDefault(); tAct(btn.dataset.ta, btn); } });
+    paintT(TE.cell);
+    requestAnimationFrame(() => ov.classList.add('in'));
+    fitTE();
+  }
+  function paintT(rc) {
+    if (!TE) return;
+    TE.sc.innerHTML = tableHtml(TE.b, true);
+    TE.ov.querySelector('.nt-ted-sz').textContent = `${TE.b.rows.length} صف · ${TE.b.rows[0].length} عمود`;
+    if (rc) focusCell(rc[0], rc[1]);
+  }
+  function focusCell(r, c) {
+    if (!TE) return;
+    const el = TE.sc.querySelector(`[data-r="${r}"][data-c="${c}"]`); if (!el) return;
+    TE.cell = [r, c]; placeCaret(el, null); markCell();
+    const box = el.getBoundingClientRect(), sb = TE.sc.getBoundingClientRect();
+    if (box.bottom > sb.bottom - 10 || box.top < sb.top + 40) el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }
+  function markCell() {
+    if (!TE) return; const [r, c] = TE.cell;
+    TE.sc.querySelectorAll('.nt-on-r,.nt-on-c').forEach(x => x.classList.remove('nt-on-r', 'nt-on-c'));
+    TE.sc.querySelectorAll(`tr.nt-row-t`)[r]?.classList.add('nt-on-r');
+    TE.sc.querySelectorAll(`[data-c="${c}"]`).forEach(x => x.classList.add('nt-on-c'));
+    const col = (TE.b.rc || [])[r] || '';
+    TE.ov.querySelectorAll('[data-ta=color]').forEach(d => d.classList.toggle('on', d.dataset.col === col));
+  }
+  function tAct(a, btn) {
+    if (!TE) return;
+    const b = TE.b, R = b.rows, cols = R[0].length; let [r, c] = TE.cell;
+    if (a === 'done') return closeTable();
+    if (a === 'pal') { const p = TE.ov.querySelector('.nt-ted-cols'); p.hidden = !p.hidden; btn.classList.toggle('on', !p.hidden); fitTE(); return; }
+    if (a === 'del') { const i = idx(b.id); closeTable(true); B.splice(i, 1); if (!B.length) B.push({ id: nid(), type: 'p', text: '', indent: 0 }); cur = B[Math.max(0, i - 1)].id; draw(); save(); return toast('الجدول اتمسح', () => undo()); }
+    remember();
+    if (a === 'row+' || a === 'rowat') { if (a === 'rowat') r = +btn.dataset.r; R.splice(r + 1, 0, Array(cols).fill('')); (b.rh ||= []).splice(r + 1, 0, null); (b.rc ||= []).splice(r + 1, 0, a === 'rowat' ? (b.rc[r] || '') : ''); r++; }
+    else if (a === 'col+' || a === 'colat') { if (a === 'colat') c = +btn.dataset.c; R.forEach(x => x.splice(c + 1, 0, '')); b.cw.splice(c + 1, 0, COLW); c++; }
+    else if (a === 'row-') { if (R.length <= 1) return; R.splice(r, 1); (b.rh || []).splice(r, 1); (b.rc || []).splice(r, 1); r = Math.max(0, r - 1); }
+    else if (a === 'col-') { if (cols <= 1) return; R.forEach(x => x.splice(c, 1)); b.cw.splice(c, 1); c = Math.max(0, c - 1); }
+    else if (a === 'color') { (b.rc ||= [])[r] = btn.dataset.col || ''; }
+    else if (a === 'fit') { b.cw = Array(cols).fill(COLW); b.rh = []; }
+    paintT([r, c]); save();
+  }
+  function closeTable(silent) {
+    if (!TE) return;
+    const bid = TE.b.id; TE.ov.remove(); TE = null;
+    if (!dead && visible) dock.hidden = false;
+    if (!silent) { document.activeElement?.blur(); draw(); save(); setTimeout(() => doc.querySelector(`[data-id="${bid}"]`)?.scrollIntoView({ block: 'center' }), 30); }
+  }
+  // المحرر بياخد الجزء الظاهر من الشاشة بس (فوق الكيبورد)
+  function fitTE() { if (!TE) return; const v = window.visualViewport; TE.ov.style.top = (v ? v.offsetTop : 0) + 'px'; TE.ov.style.height = (v ? v.height : innerHeight) + 'px'; }
 
   // ---------- الفهرس والبحث ----------
   function paintToc() {
@@ -454,6 +531,7 @@ export async function mountNotes(host, { table, id, now, seek, label }) {
     if (fork && a === 'forkx') { const p = fork.pid; closeFork(); return placeCaret(doc.querySelector(`[data-id="${p}"] .nt-tx`), null); }
     if (fork && a === 'forkcol') { fork.col = btn.dataset.col; fork.box.className = `nt-fork in nt-c-${fork.col}`; fork.box.querySelectorAll('.nt-dot').forEach(d => d.classList.toggle('on', d === btn)); return placeCaret(fork.box.querySelector('.nt-fork-in'), null); }
     if (a === 'panel') return showPanel(btn.dataset.p);
+    if (a === 'topen') return openTable(btn.dataset.bid, [0, 0]);
     if (a === 'kb') { document.activeElement?.blur(); return showPanel('', true); }
     if (a === 'undo') return undo();
     if (a === 'redo') return redo();
@@ -496,7 +574,7 @@ export async function mountNotes(host, { table, id, now, seek, label }) {
       const r = +btn.dataset.r, c = +btn.dataset.c;
       const tb = after(b, { id: nid(), type: 'table', indent: 0, rows: Array.from({ length: r }, () => Array(c).fill('')), cw: Array(c).fill(COLW), rh: [], rc: [] });
       if (idx(tb.id) === B.length - 1) B.push({ id: nid(), type: 'p', text: '', indent: 0 });
-      markGrid(0, 0); cur = tb.id; cell = [0, 0]; showPanel('table', true); draw(tb.id, null, [0, 0]);
+      markGrid(0, 0); cur = tb.id; showPanel('', true); draw(); save(); return openTable(tb.id, [0, 0]);
     } else if (a === 'time') {
       const tm = now && now(); if (tm == null) return;
       const v = tm.v || null, vn = tm.vn || null;
@@ -575,15 +653,21 @@ export async function mountNotes(host, { table, id, now, seek, label }) {
   }
 
   // ---------- الشريط فوق الكيبورد ----------
+  // الشريط عايش جوه "إطار" قد الجزء الظاهر من الشاشة بالظبط، ولازق في آخره. لما الكيبورد يفتح الإطار بيقصر، فالشريط يطلع فوقه
   function place() {
     if (dead) return;
-    const vv = window.visualViewport;
-    const kb = vv ? Math.max(0, innerHeight - (vv.height + vv.offsetTop)) : 0;
-    dock.style.transform = `translateY(${-kb}px)`;
-    dock.classList.toggle('kb', kb > 80);
+    const v = window.visualViewport;
+    const top = v ? v.offsetTop : 0, h = v ? v.height : innerHeight;
+    dock.style.top = top + 'px'; dock.style.height = h + 'px';
+    dock.classList.toggle('kb', innerHeight - h > 140);
+    fitTE();
   }
+  let pb = 0;
+  const placeSoon = () => { cancelAnimationFrame(pb); const t0 = performance.now(); const go = () => { place(); if (performance.now() - t0 < 800) pb = requestAnimationFrame(go); }; go(); };
   const vv = window.visualViewport;
-  vv?.addEventListener('resize', place); vv?.addEventListener('scroll', place);
+  vv?.addEventListener('resize', placeSoon); vv?.addEventListener('scroll', place);
+  window.addEventListener('scroll', place, { passive: true });
+  document.addEventListener('focusin', placeSoon); document.addEventListener('focusout', placeSoon);
   place();
 
   draw(B.length === 1 && !B[0].text ? B[0].id : null);
@@ -593,11 +677,13 @@ export async function mountNotes(host, { table, id, now, seek, label }) {
     flush, addRef,
     // من بره (المساعد): حط سطور في آخر الدفتر
     append(blocks) { remember(); const made = blocks.map(x => ({ id: nid(), indent: 0, ...x })); B.push(...made); cur = made[made.length - 1].id; draw(null, null, null, made.map(m => m.id)); doc.querySelector(`[data-id="${made[0].id}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }); save(); },
-    show(on) { visible = on; dock.hidden = !on; document.body.classList.toggle('nt-open', on); if (on) { ACTIVE = inst; place(); } },
+    show(on) { visible = on; dock.hidden = !on || !!TE; document.body.classList.toggle('nt-open', on); if (on) { ACTIVE = inst; place(); } },
     destroy() {
       dead = true; flush(); dock.remove(); document.body.classList.remove('nt-open');
       document.removeEventListener('visibilitychange', onHide); document.removeEventListener('selectionchange', onSel);
-      vv?.removeEventListener('resize', place); vv?.removeEventListener('scroll', place);
+      vv?.removeEventListener('resize', placeSoon); vv?.removeEventListener('scroll', place);
+      window.removeEventListener('scroll', place); document.removeEventListener('focusin', placeSoon); document.removeEventListener('focusout', placeSoon);
+      closeTable(true);
       if (ACTIVE === inst) ACTIVE = null;
     },
   };

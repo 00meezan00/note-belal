@@ -299,22 +299,6 @@ a.card:active,button.card:active,.lnk:active{transform:scale(.985)}
 .night-pick b{font-weight:600;font-size:14px}
 .night-pick .mut{font-size:11px;line-height:1.35}
 
-/* المشغّل جوه النوتة */
-.watch .vid{position:relative;aspect-ratio:16/9;border-radius:16px;overflow:hidden;background:#000;border:1px solid var(--line)}
-.watch .vid iframe,.watch .vid #ytp{position:absolute;inset:0;width:100%;height:100%;border:0}
-.watch .vid-msg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:20px;text-align:center;color:#C9D2D9;font-size:14px;line-height:1.7;pointer-events:none}
-.wl{padding:4px 10px}
-.wl-it{display:flex;align-items:center;gap:10px;width:100%;padding:8px 4px;color:var(--ink)}
-.wl-go{flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:1px;background:none;border:0;padding:2px 0;cursor:pointer;color:inherit;text-align:start}
-.wl-it.here{background:var(--mat);border-radius:10px}
-.wl-n{flex:none;width:30px;height:30px;cursor:pointer;background:transparent;padding:0;border-radius:8px;border:1.5px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:var(--mut)}
-.wl-n.ok{background:var(--ok);border-color:var(--ok);color:#fff}
-.wl-t{display:block;font-size:14px;font-weight:500;line-height:1.45;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
-
-/* المشغّل وإنت بتكتب أو بتسأل: الفيديو يفضل ظاهر فوق */
-.watch.noting .vid{position:sticky;top:calc(4px + var(--safe-t));z-index:4;box-shadow:0 6px 18px rgba(0,0,0,.25)}
-.wtabs .ai-spark{color:#8B5CF6;margin-inline-end:2px}
-
 /* ============ الدفتر ============ */
 /* ألوان (للسطر أو صف الجدول) */
 :root{--k-red:#C42B3B;--k-orange:#C2560C;--k-amber:#A86E00;--k-green:#2B7A4B;--k-teal:#0E7C86;--k-blue:#2559C4;--k-purple:#7A3DC4;--k-pink:#C0337A;--nt-margin:#E7A9A9;--nt-hl:#FBE7B5}
@@ -376,9 +360,9 @@ body.nt-open .fab{display:none}
 .nt-new{animation:ntDropR .35s cubic-bezier(.2,.8,.2,1)}
 
 /* شريط الأدوات: تحت خالص، وبيطلع فوق الكيبورد */
-.nt-dock{position:fixed;left:0;right:0;bottom:0;z-index:25;padding:0 8px calc(8px + var(--safe-b));pointer-events:none;transition:transform .12s ease-out}
+.nt-dock{position:fixed;left:0;right:0;top:0;height:100vh;z-index:25;pointer-events:none;display:flex;flex-direction:column;justify-content:flex-end;padding:0 8px calc(8px + var(--safe-b))}
 .nt-dock.kb{padding-bottom:6px}
-.nt-dock>*{pointer-events:auto;max-width:560px;margin:0 auto}
+.nt-dk{pointer-events:auto;width:100%;max-width:560px;margin:0 auto;display:flex;flex-direction:column}
 .nt-main{display:flex;align-items:center;justify-content:space-between;gap:2px;background:color-mix(in srgb,var(--paper) 88%,transparent);backdrop-filter:blur(14px) saturate(1.4);-webkit-backdrop-filter:blur(14px) saturate(1.4);border:1px solid var(--line);border-radius:18px;padding:4px;box-shadow:0 8px 24px rgba(0,0,0,.16)}
 .nt-main button{flex:1;min-width:0;height:42px;border:0;border-radius:12px;background:none;color:var(--ink);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
 .nt-main button.on{background:var(--ink);color:var(--paper)}
@@ -386,7 +370,7 @@ body.nt-open .fab{display:none}
 .nt-main .nt-time{color:var(--amb)}
 .nt-main .nt-kb{display:none}
 .nt-dock.kb .nt-main .nt-kb{display:flex}
-.nt-pan{background:var(--paper);border:1px solid var(--line);border-radius:18px;padding:10px;margin-bottom:6px!important;box-shadow:0 8px 24px rgba(0,0,0,.14);display:flex;flex-direction:column;gap:8px;max-height:46vh;overflow:auto;animation:ntPan .18s ease-out}
+.nt-pan{background:var(--paper);border:1px solid var(--line);border-radius:18px;padding:10px;margin-bottom:6px!important;box-shadow:0 8px 24px rgba(0,0,0,.14);display:flex;flex-direction:column;gap:8px;max-height:min(42vh,300px);overflow:auto;animation:ntPan .18s ease-out}
 .nt-pan[hidden]{display:none}
 @keyframes ntPan{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 .nt-row{display:flex;align-items:center;gap:6px;overflow-x:auto;scrollbar-width:none}
@@ -500,3 +484,127 @@ body.nt-open .fab{display:none}
 .ai-in .btn svg{transform:scaleX(-1)}
 .ai-note{margin:0;font-size:12px;line-height:1.6}
 @media (prefers-reduced-motion:reduce){.nt-fork,.nt-new,.nt-pan,.nt-dock{transition:none;animation:none}.ai-dots i{animation:none}}
+
+
+/* ============ شاشة الفيديو (البرواز) ============ */
+/* الفيديو في برواز غامق ثابت فوق، زي شاشة موبايل على حصيرة الصيانة.
+   التبويب المختار لونه زي الورقة اللي تحت، فبيبان كأنه "لسان" الورقة طالع من البرواز */
+body.w-on #top{display:none}
+body.w-on main{padding-top:calc(var(--wsh,320px) + 12px)}
+body.w-on .fab{display:none}
+#wshell{position:fixed;z-index:22;top:0;left:0;right:0;max-width:560px;margin:0 auto;background:var(--dock);color:#E8EDF1;
+  padding:calc(4px + var(--safe-t)) 10px 0;border-radius:0 0 22px 22px;box-shadow:0 12px 28px rgba(0,0,0,.28);
+  display:grid;grid-template-columns:minmax(0,1fr);grid-template-areas:"bar" "vid" "meter" "tabs";column-gap:12px}
+#wshell[hidden]{display:none}
+.ws-bar{grid-area:bar;display:flex;align-items:center;gap:8px;height:48px}
+.ws-ic{flex:none;width:40px;height:40px;border-radius:20px;border:0;background:rgba(255,255,255,.08);color:inherit;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
+.ws-ic:active{transform:scale(.92)}
+.ws-t{flex:1;min-width:0;line-height:1.25}
+.ws-t small{display:block;font-size:11px;color:#8F9CA8;letter-spacing:.2px}
+.ws-t b{display:block;font:600 16px "Reem Kufi",system-ui,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ws-vid{grid-area:vid;position:relative;aspect-ratio:16/9;border-radius:12px;overflow:hidden;background:#000;box-shadow:0 0 0 1px rgba(255,255,255,.07)}
+.ws-vid #ytp,.ws-vid iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+.ws-vid .vid-msg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:16px;text-align:center;color:#C9D2D9;font-size:13.5px;line-height:1.7;pointer-events:none}
+.ws-meter{grid-area:meter;padding:10px 2px 4px;min-width:0}
+/* العدّاد: خانة لكل فيديو، بتتملي من اليمين */
+.wm-cells{display:flex;gap:2px;height:7px}
+.wm-cells i{flex:1;min-width:2px;border-radius:2px;background:linear-gradient(to left,var(--amb) var(--f,0%),rgba(255,255,255,.13) var(--f,0%))}
+.wm-cells i.ok{background:var(--ok)}
+.wm-cells i.here{box-shadow:0 0 0 1.5px #fff;animation:wmHere 1.6s ease-in-out infinite}
+@keyframes wmHere{50%{box-shadow:0 0 0 1.5px rgba(255,255,255,.35)}}
+.wm-row{display:flex;align-items:center;gap:6px;margin-top:6px;min-height:32px}
+.wm-txt{flex:1;min-width:0;font-size:12.5px;color:#9EABB7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wm-txt b,.wm-txt .num{color:#fff;font-weight:500}
+.wm-chip{flex:none;height:30px;min-width:44px;padding:0 10px;border-radius:15px;border:1px solid rgba(255,255,255,.18);background:none;color:#fff;font-size:12.5px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.wm-chip.wm-ic{min-width:30px;width:30px;padding:0}
+.wm-chip .ic{width:16px;height:16px}
+.ws-tabs{grid-area:tabs;display:flex;gap:4px;padding:6px 0 0}
+.ws-tabs button{flex:1;min-height:40px;border:0;border-radius:13px 13px 0 0;background:none;color:#9EABB7;font-size:14px;font-weight:500;display:flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;padding:0 6px}
+.ws-tabs button.on{background:var(--mat);color:var(--ink)}
+.ws-tabs .ic{width:15px;height:15px}
+.ws-n{font:500 11px "IBM Plex Mono",monospace;opacity:.75}
+.ws-away{display:none}
+/* صغير وإنت بتكتب: الفيديو على جنب والعدّاد جنبه */
+#wshell.mini{grid-template-columns:44% minmax(0,1fr);grid-template-areas:"vid meter" "tabs tabs";padding-top:calc(8px + var(--safe-t))}
+#wshell.mini .ws-bar{display:none}
+#wshell.mini .ws-vid{border-radius:9px}
+#wshell.mini .ws-meter{padding:0;align-self:center}
+#wshell.mini .wm-row{flex-wrap:wrap;row-gap:4px}
+#wshell.mini .wm-txt{flex:1 0 100%}
+#wshell.mini .ws-tabs button{min-height:36px}
+/* سبت الصفحة والفيديو شغال: برواز صغير في الركن فوق الشريط اللي تحت */
+#wshell.away{top:auto;right:auto;left:12px;bottom:calc(96px + var(--safe-b));width:min(216px,56vw);margin:0;padding:6px;border-radius:16px;grid-template-areas:"vid" "away";transform:none!important;animation:wsAway .25s cubic-bezier(.2,.8,.2,1)}
+body.no-dock #wshell.away{bottom:calc(16px + var(--safe-b))}
+#wshell.away .ws-bar,#wshell.away .ws-meter,#wshell.away .ws-tabs{display:none}
+#wshell.away .ws-vid{border-radius:10px}
+#wshell.away .ws-away{grid-area:away;display:flex;gap:6px;padding-top:6px}
+.ws-away button{flex:1;height:34px;border-radius:10px;border:0;background:rgba(255,255,255,.1);color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
+.ws-away button .ic{width:18px;height:18px}
+@keyframes wsAway{from{opacity:0;transform:translateY(20px) scale(.9)}to{opacity:1;transform:none}}
+
+/* قايمة الفيديوهات */
+.watch{min-height:50vh}
+.wl{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.wl-it{display:flex;align-items:center;gap:12px;padding:10px 4px;border-bottom:1px solid var(--line)}
+.wl-it:last-child{border-bottom:0}
+.wl-it.here{background:var(--paper);border-radius:12px;border-bottom-color:transparent;box-shadow:inset 3px 0 0 var(--amb);padding-inline:10px;margin:2px -6px}
+.wl-n{flex:none;width:32px;height:32px;border-radius:9px;border:1.5px solid var(--line);background:none;color:var(--mut);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;font-size:12px}
+.wl-it.ok .wl-n{background:var(--ok);border-color:var(--ok);color:#fff}
+.wl-go{flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:3px;background:none;border:0;padding:0;cursor:pointer;color:inherit;text-align:start}
+.wl-t{font-size:14.5px;font-weight:500;line-height:1.45;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.wl-it.ok .wl-t{color:var(--mut)}
+.wl-m{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--mut)}
+.wl-m b{color:var(--amb);font-weight:600}
+.wl-bar{width:56px;height:4px;border-radius:2px;background:var(--empty);overflow:hidden;display:block}
+.wl-bar i{display:block;height:100%;background:var(--amb);margin-inline-start:auto;margin-inline-end:0}
+
+/* الدفتر جوه شاشة الفيديو: ورقة أهدى ومساحة أكتر */
+.watch .nt-doc{border-radius:14px;padding:14px 12px 22px;padding-inline-start:34px;background:linear-gradient(to left,transparent 22px,var(--nt-margin) 22px,var(--nt-margin) 23.5px,transparent 23.5px),var(--paper)}
+.watch .nt-st{padding:0 4px}
+.nt-forkbtn{width:26px;height:26px;border-radius:13px;background:var(--paper)!important;border:1px solid var(--line)!important;color:var(--mut)!important;font-size:13px;box-shadow:none!important}
+
+/* قايمة ⋯ في الدفتر: 3 صفوف صغيرة بدل الكروت الكبيرة */
+.nt-menu{gap:10px}
+.nt-mg{display:flex;flex-direction:column;gap:5px}
+.nt-mgl{font-size:11.5px;color:var(--mut);padding-inline-start:2px}
+.nt-menu .nt-row button{min-height:36px;font-size:13.5px;padding:0 11px}
+.nt-menu .bad{color:var(--bad)}
+
+/* الجدول في الدفتر: معاينة، تدوس عليها يفتح المحرر */
+.nt-prev{cursor:pointer;border-radius:10px;border:1px solid var(--line);margin:6px 0 0}
+.nt-prev table{border-collapse:collapse;font-size:.88em;min-width:100%}
+.nt-prev th,.nt-prev td{border-bottom:1px solid var(--line);border-inline-start:1px solid var(--line);padding:6px 9px;text-align:start;vertical-align:top;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nt-prev tr>*:first-child{border-inline-start:0}
+.nt-prev th{background:var(--mat);font-weight:600}
+.nt-prev tr[class*=nt-c-] td{background:color-mix(in srgb,var(--nc) 14%,var(--paper))}
+.nt-topen{display:inline-flex;align-items:center;gap:8px;margin:6px 0 4px;min-height:34px;padding:0 12px;border-radius:10px;border:1px solid var(--line);background:var(--mat);color:var(--ink);font-size:13px;cursor:pointer}
+.nt-topen .num{font-size:12px;color:var(--mut)}
+
+/* محرر الجدول: الشاشة كلها */
+.nt-ted{position:fixed;left:0;right:0;top:0;height:100vh;z-index:40;background:var(--mat);display:flex;flex-direction:column;opacity:0;transform:translateY(16px);transition:opacity .18s,transform .22s cubic-bezier(.2,.8,.2,1)}
+.nt-ted.in{opacity:1;transform:none}
+.nt-ted-hd{display:flex;align-items:center;gap:10px;padding:calc(8px + var(--safe-t)) 12px 8px;background:var(--dock);color:#E8EDF1}
+.nt-ted-hd b{font:600 17px "Reem Kufi",system-ui,sans-serif}
+.nt-ted-hd .mut{color:#8F9CA8}
+.nt-ted-ok{min-height:38px;padding:0 18px;border-radius:12px;border:0;background:var(--amb);color:#15202B;font-weight:600;cursor:pointer}
+.nt-ted-x{width:38px;height:38px;border-radius:19px;border:0;background:rgba(255,255,255,.08);color:inherit;cursor:pointer}
+.nt-ted-sc{flex:1;overflow:auto;-webkit-overflow-scrolling:touch;padding:0 0 30px;overscroll-behavior:contain}
+.nt-et{border-collapse:separate;border-spacing:0;table-layout:fixed;font-size:15px;background:var(--paper)}
+.nt-et th,.nt-et td{border-bottom:1px solid var(--line);border-inline-start:1px solid var(--line);padding:9px 10px;vertical-align:top;outline:none;text-align:start;word-break:break-word;min-height:40px;background:var(--paper)}
+.nt-et th{background:var(--mat);font-weight:600;position:sticky;top:28px;z-index:2;box-shadow:0 1px 0 var(--line)}
+.nt-et .nt-hrow td{position:sticky;top:0;z-index:3;height:28px;background:var(--mat);border:0;padding:0}
+.nt-et td.nt-rh{position:sticky;inset-inline-start:0;z-index:1;background:var(--mat);border:0;border-inline-end:1px solid var(--line);padding:0;text-align:center;vertical-align:middle}
+.nt-et .nt-hrow td.nt-corner{inset-inline-start:0;z-index:4;position:sticky}
+.nt-et tr:first-child+tr td.nt-rh{z-index:3;top:28px}
+.nt-rl,.nt-cl{display:block;font:500 11px "IBM Plex Mono",monospace;color:var(--mut);text-align:center;line-height:28px}
+.nt-et th:focus,.nt-et td:focus{box-shadow:inset 0 0 0 2px var(--amb);background:color-mix(in srgb,var(--amb) 7%,var(--paper))}
+.nt-et .nt-on-c,.nt-et .nt-on-r>td:not(.nt-rh),.nt-et .nt-on-r>th{background:color-mix(in srgb,var(--amb) 6%,var(--paper))}
+.nt-et .nt-on-r .nt-rl,.nt-et .nt-ch.nt-on-c .nt-cl{color:var(--amb);font-weight:700}
+.nt-et .nt-row-t[class*=nt-c-]>td:not(.nt-rh),.nt-et .nt-row-t[class*=nt-c-]>th{background:color-mix(in srgb,var(--nc) 15%,var(--paper))}
+.nt-et .nt-cgrip{top:0;height:28px;width:22px;inset-inline-end:-11px;z-index:5}
+.nt-et .nt-cgrip::after{opacity:.35;top:7px;bottom:7px;inset-inline-start:10px}
+.nt-et .nt-rgrip{inset-inline-start:0;width:30px;height:16px;bottom:-8px;z-index:5}
+.nt-et .nt-rgrip::after{opacity:.35;inset-inline:8px;top:7px}
+.nt-ted-bar{background:color-mix(in srgb,var(--paper) 92%,transparent);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-top:1px solid var(--line);padding:8px 10px calc(8px + var(--safe-b));display:flex;flex-direction:column;gap:8px}
+.nt-ted-bar .nt-row button{min-height:38px}
+@media (prefers-reduced-motion:reduce){.nt-ted,#wshell.away,.wm-cells i.here{transition:none;animation:none}}
