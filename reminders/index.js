@@ -559,12 +559,15 @@ async function linkDuration(link, env) {
 // ======================= ✦ اسأل (Gemini) =======================
 // الترتيب من الأقوى للأخف: بيبدأ بالـ Pro، ولو مشغول أو مش متاح بينزل للي بعده
 const GEMINI_MODELS = ['gemini-pro-latest', 'gemini-3.1-pro-preview', 'gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-flash-latest', 'gemini-3.5-flash-lite', 'gemini-flash-lite-latest', 'gemini-2.5-flash'];
+// للملخص: الموديلات السريعة الأول، والـ Pro آخر حاجة لو كله مشغول
+const GEMINI_FAST = ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-flash-latest', 'gemini-3.5-flash-lite', 'gemini-flash-lite-latest', 'gemini-2.5-flash', 'gemini-pro-latest', 'gemini-3.1-pro-preview'];
 const AI_STYLE = 'إنت مساعد تعليمي جوه تطبيق اسمه "نوتة بلال". اتكلم بالعامية المصرية البسيطة، وخلي الكلام قصير وواضح ومنظم (نقط لو ينفع). لو ذكرت وقت في الفيديو اكتبه كده [دقايق:ثواني] مثلًا [12:30].';
 const secsStr = s => `${Math.max(0, Math.floor(s))}s`;
 const mmssW = s => { s = Math.max(0, Math.floor(s || 0)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60; return h ? `${h}:${String(m).padStart(2, '0')}:${String(x).padStart(2, '0')}` : `${m}:${String(x).padStart(2, '0')}`; };
 
-async function gemini(env, parts, { json: asJson = false, video = false } = {}) {
-  const models = env.GEMINI_MODEL ? [env.GEMINI_MODEL, ...GEMINI_MODELS.filter(m => m !== env.GEMINI_MODEL)] : GEMINI_MODELS;
+async function gemini(env, parts, { json: asJson = false, video = false, fast = false } = {}) {
+  const list = fast ? GEMINI_FAST : GEMINI_MODELS;
+  const models = env.GEMINI_MODEL ? [env.GEMINI_MODEL, ...list.filter(m => m !== env.GEMINI_MODEL)] : list;
   const body = JSON.stringify({ contents: [{ role: 'user', parts }], generationConfig: { temperature: 0.4, ...(asJson ? { responseMimeType: 'application/json' } : {}), ...(video ? { mediaResolution: 'MEDIA_RESOLUTION_LOW' } : {}) } });
   const wait = ms => new Promise(r => setTimeout(r, ms));
   const TRIES = 3, WAITS = [2000, 4000];          // كل موديل لحد 3 مرات: يستنى ثانيتين، وبعدين 4 ثواني
@@ -598,6 +601,69 @@ async function gemini(env, parts, { json: asJson = false, video = false } = {}) 
   throw new Error('المساعد مش عارف يوصل لأي موديل دلوقتي. جرّب كمان شوية' + (other && lastErr ? ` (السبب من جوجل: ${lastErr.slice(0, 120)})` : ''));
 }
 
+
+// ---------- الكلام المكتوب (الكابشن) ----------
+// بدل ما Gemini يتفرج على الفيديو كله (بطيء)، بنجيب الكلام اللي اتقال مكتوب بأوقاته ونبعته (ثواني)
+// لو الفيديو مفيهوش كابشن أو يوتيوب رفض، بيرجع null وبنرجع للطريقة القديمة (يتفرج على الفيديو)
+const YT_CLIENTS = [
+  { ua: 'com.google.android.youtube/20.10.38 (Linux; U; Android 11) gzip', client: { clientName: 'ANDROID', clientVersion: '20.10.38', androidSdkVersion: 30, hl: 'en' } },
+  { ua: 'com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3 like Mac OS X)', client: { clientName: 'IOS', clientVersion: '20.10.4', deviceModel: 'iPhone16,2', hl: 'en' } },
+  { ua: UA['User-Agent'], client: { clientName: 'WEB', clientVersion: '2.20250312.04.00', hl: 'en' } },
+];
+async function captionTracks(v) {
+  for (const c of YT_CLIENTS) {
+    try {
+      const r = await fetch('https://www.youtube.com/youtubei/v1/player?prettyPrint=false', { method: 'POST', headers: { 'User-Agent': c.ua, 'Content-Type': 'application/json' }, body: JSON.stringify({ videoId: v, context: { client: c.client } }) });
+      if (!r.ok) continue;
+      const j = await r.json().catch(() => ({}));
+      const t = j.captions && j.captions.playerCaptionsTracklistRenderer && j.captions.playerCaptionsTracklistRenderer.captionTracks;
+      if (Array.isArray(t) && t.length) return { tracks: t, ua: c.ua };
+    } catch (_) {}
+  }
+  try {   // آخر محاولة: صفحة الفيديو نفسها
+    const { text } = await getText(`https://www.youtube.com/watch?v=${v}&hl=en`);
+    const m = /"captionTracks":(\[.*?\])/.exec(text);
+    if (m) return { tracks: JSON.parse(m[1]), ua: UA['User-Agent'] };
+  } catch (_) {}
+  return null;
+}
+async function transcript(v) {
+  const cache = caches.default, key = new Request(`https://nota-cache.local/tr/${v}`);
+  const hit = await cache.match(key).catch(() => null);
+  if (hit) { const j = await hit.json().catch(() => null); if (j) return j.lines ? j : null; }
+  let out = null;
+  const got = await captionTracks(v);
+  if (got) {
+    // الكابشن اللي حد كتبه أحسن من اللي اتعمل أوتوماتيك
+    const tr = got.tracks.find(x => x.kind !== 'asr') || got.tracks[0];
+    try {
+      const base = String(tr.baseUrl || '').replace(/&fmt=[^&]*/, '');
+      const r = await fetch(base + '&fmt=json3', { headers: { 'User-Agent': got.ua } });
+      const j = r.ok ? await r.json().catch(() => null) : null;
+      const lines = [];
+      for (const e of (j && j.events) || []) {
+        const txt = (e.segs || []).map(x => x.utf8 || '').join('').replace(/\s+/g, ' ').trim();
+        if (txt) lines.push({ t: Math.floor((e.tStartMs || 0) / 1000), x: txt });
+      }
+      if (lines.length > 5) out = { lines, lang: tr.languageCode || '' };
+    } catch (_) {}
+  }
+  // بنحفظه يوم (وحتى لو مفيش، بنفتكر إن مفيش 6 ساعات عشان مانضيّعش وقت كل مرة)
+  await cache.put(key, new Response(JSON.stringify(out || { none: true }), { headers: { 'Cache-Control': `max-age=${out ? 86400 : 21600}` } })).catch(() => {});
+  return out;
+}
+// السطور ← نص فيه وقت كل 20 ثانية تقريبًا: "[1:20] الكلام..."
+function trText(lines, from = 0, to = Infinity, max = 150000) {
+  let out = '', mark = -999;
+  for (const l of lines) {
+    if (l.t < from || l.t > to) continue;
+    if (l.t - mark >= 20) { out += `\n[${mmssW(l.t)}] `; mark = l.t; }
+    out += l.x + ' ';
+    if (out.length > max) break;
+  }
+  return out.trim();
+}
+
 async function aiRun(env, b) {
   const url = String(b.url || '');
   if (!/^https:\/\/www\.youtube\.com\/watch\?v=[\w-]{11}$/.test(url)) return { error: 'المساعد بيشتغل مع فيديوهات يوتيوب بس' };
@@ -610,7 +676,11 @@ async function aiRun(env, b) {
  "terms": [{"word": "كلمة أو مصطلح صعب اتقال", "meaning": "معناه ببساطة في سياق الفيديو"}],
  "outline": "شرح مفصّل للفيديو جزء جزء بالترتيب، وقبل كل جزء وقته كده [دقايق:ثواني]. لحد 1200 كلمة"}
 خلي points من 6 لـ 15 نقطة بترتيب الفيديو، و terms لحد 15 كلمة (لو مفيش كلمات صعبة رجّع ليستة فاضية).`;
-    const raw = await gemini(env, [{ fileData: { fileUri: url } }, { text: prompt }], { json: true, video: true });
+    // الأول: من الكلام المكتوب بموديل سريع (ثواني). لو مفيش كابشن: يتفرج على الفيديو
+    const tr = await transcript(url.slice(-11)).catch(() => null);
+    const raw = tr
+      ? await gemini(env, [{ text: `${prompt}\n\nده الكلام اللي اتقال في الفيديو مكتوب بأوقاته (ممكن يكون فيه أخطاء كتابة بسيطة لو اتعمل أوتوماتيك):\n${trText(tr.lines)}` }], { json: true, fast: true })
+      : await gemini(env, [{ fileData: { fileUri: url } }, { text: prompt }], { json: true, video: true, fast: true });
     let d; try { d = JSON.parse(raw.replace(/^```(json)?|```$/g, '').trim()); } catch (e) { d = { summary: raw, points: [], terms: [], outline: '' }; }
     return { summary: String(d.summary || ''), points: (Array.isArray(d.points) ? d.points : []).map(p => ({ t: Number(p.t) || 0, text: String(p.text || '') })), terms: (Array.isArray(d.terms) ? d.terms : []).map(x => ({ word: String(x.word || ''), meaning: String(x.meaning || '') })), outline: String(d.outline || '') };
   }
@@ -620,6 +690,9 @@ async function aiRun(env, b) {
   const t = Number(b.t) || 0;
   if (b.deep) {   // بيتفرج على الدقيقتين اللي حوالين مكانك بس
     const from = Math.max(0, t - 90), to = t + 30;
+    const tr = await transcript(url.slice(-11)).catch(() => null);
+    const part = tr ? trText(tr.lines, from, to) : '';
+    if (part.length > 40) return { text: await gemini(env, [{ text: `${AI_STYLE}\nده الكلام اللي اتقال في الفيديو${title ? ` "${title}"` : ''} من [${mmssW(from)}] لـ [${mmssW(to)}]:\n${part}\n\nالمستخدم واقف عند [${mmssW(t)}]. ${q}` }]) };
     const text = await gemini(env, [{ fileData: { fileUri: url }, videoMetadata: { startOffset: secsStr(from), endOffset: secsStr(to) } }, { text: `${AI_STYLE}\nالمستخدم واقف عند [${mmssW(t)}] في الفيديو${title ? ` "${title}"` : ''}. ${q}` }], { video: true });
     return { text };
   }
