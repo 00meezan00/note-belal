@@ -53,7 +53,7 @@ export default {
         if (!u.ok) return json({ error: 'لازم تكون داخل على النوتة' }, 401);
         if (!env.GEMINI_KEY) return json({ error: 'محتاج مفتاح GEMINI_KEY في الـ Worker (Settings ← Variables and Secrets)' }, 400);
         return json(await aiRun(env, await req.json()));
-      } catch (e) { return json({ error: 'المساعد مردّش: ' + String(e && e.message || e).slice(0, 200) }, 500); }
+      } catch (e) { return json({ error: String(e && e.message || e).slice(0, 220) }, 500); }
     }
     if (url.pathname === '/test' && req.method === 'POST') {
       // أي خطأ هنا بيرجع للتطبيق بسببه، بدل ما الـ Worker يقع ساكت
@@ -557,32 +557,38 @@ async function linkDuration(link, env) {
 
 
 // ======================= ✦ اسأل (Gemini) =======================
-const GEMINI_MODELS = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash'];
+const GEMINI_MODELS = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-flash-latest', 'gemini-3.5-flash-lite', 'gemini-flash-lite-latest', 'gemini-2.5-flash'];
 const AI_STYLE = 'إنت مساعد تعليمي جوه تطبيق اسمه "نوتة بلال". اتكلم بالعامية المصرية البسيطة، وخلي الكلام قصير وواضح ومنظم (نقط لو ينفع). لو ذكرت وقت في الفيديو اكتبه كده [دقايق:ثواني] مثلًا [12:30].';
 const secsStr = s => `${Math.max(0, Math.floor(s))}s`;
 const mmssW = s => { s = Math.max(0, Math.floor(s || 0)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60; return h ? `${h}:${String(m).padStart(2, '0')}:${String(x).padStart(2, '0')}` : `${m}:${String(x).padStart(2, '0')}`; };
 
 async function gemini(env, parts, { json: asJson = false, video = false } = {}) {
   const models = env.GEMINI_MODEL ? [env.GEMINI_MODEL, ...GEMINI_MODELS] : GEMINI_MODELS;
-  let lastErr = '';
+  const body = JSON.stringify({ contents: [{ role: 'user', parts }], generationConfig: { temperature: 0.4, ...(asJson ? { responseMimeType: 'application/json' } : {}), ...(video ? { mediaResolution: 'MEDIA_RESOLUTION_LOW' } : {}) } });
+  const wait = ms => new Promise(r => setTimeout(r, ms));
+  let busy = 0, quota = 0, lastErr = '';
   for (const model of models) {
-    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-      method: 'POST', headers: { 'x-goog-api-key': env.GEMINI_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contents: [{ role: 'user', parts }], generationConfig: { temperature: 0.4, ...(asJson ? { responseMimeType: 'application/json' } : {}), ...(video ? { mediaResolution: 'MEDIA_RESOLUTION_LOW' } : {}) } }),
-    });
-    const j = await r.json().catch(() => ({}));
-    if (r.ok) {
-      const text = ((j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) || []).map(p => p.text || '').join('').trim();
-      if (!text) throw new Error(j.promptFeedback && j.promptFeedback.blockReason ? 'Gemini رفض يجاوب على ده' : 'Gemini رجّع رد فاضي');
-      return text;
+    // كل موديل بنجربه لحد مرتين: لو مشغول بنستنى ثانية ونص ونجرب تاني، وبعدين نروح للي بعده
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, { method: 'POST', headers: { 'x-goog-api-key': env.GEMINI_KEY, 'Content-Type': 'application/json' }, body });
+      const j = await r.json().catch(() => ({}));
+      if (r.ok) {
+        const text = ((j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) || []).map(p => p.text || '').join('').trim();
+        if (!text) throw new Error(j.promptFeedback && j.promptFeedback.blockReason ? 'Gemini رفض يجاوب على ده' : 'Gemini رجّع رد فاضي، جرّب تاني');
+        return text;
+      }
+      lastErr = (j.error && j.error.message) || ('Gemini رجّع ' + r.status);
+      if (r.status === 404 || (r.status === 400 && /not found|not supported|unknown name|invalid.*model/i.test(lastErr))) break;   // الموديل مش موجود: اللي بعده
+      if (r.status === 503 || r.status === 500 || r.status === 504 || /high demand|overloaded|unavailable|try again later/i.test(lastErr)) { busy++; if (attempt === 0) { await wait(1500); continue; } break; }   // مشغول
+      if (r.status === 429) { quota++; break; }   // حصة الموديل ده خلصت: نجرب موديل تاني (كل موديل ليه حصته)
+      if (/private|unlisted|not accessible|could not.*video|unable to process/i.test(lastErr)) throw new Error('Gemini مقدرش يفتح الفيديو ده (لازم يكون عام على يوتيوب)');
+      if (/api key|permission|unauthenticated|API_KEY/i.test(lastErr)) throw new Error('مفتاح GEMINI_KEY مش شغال. اتأكد إنك نسخته صح في Cloudflare');
+      throw new Error(lastErr);
     }
-    lastErr = (j.error && j.error.message) || ('Gemini رجّع ' + r.status);
-    if (r.status === 404 || (r.status === 400 && /not found|not supported|unknown name|invalid.*model/i.test(lastErr))) continue;   // الموديل ده مش موجود، نجرب اللي بعده
-    if (r.status === 429) throw new Error('خلصت حصة Gemini المجانية النهاردة (أو طلبات كتير ورا بعض). جرّب بعد شوية');
-    if (/private|unlisted|not accessible|could not.*video|unable to process/i.test(lastErr)) throw new Error('Gemini مقدرش يفتح الفيديو ده (لازم يكون عام على يوتيوب)');
-    throw new Error(lastErr);
   }
-  throw new Error('مفيش موديل Gemini شغال: ' + lastErr);
+  if (busy) throw new Error('Gemini عليه ضغط كبير دلوقتي من ناس كتير. ده بيبقى مؤقت، جرّب كمان دقيقة أو اتنين');
+  if (quota) throw new Error('خلصت حصة Gemini المجانية النهاردة (أو طلبات كتير ورا بعض). جرّب بعد شوية أو بكرة');
+  throw new Error('مفيش موديل Gemini شغال دلوقتي: ' + lastErr);
 }
 
 async function aiRun(env, b) {
