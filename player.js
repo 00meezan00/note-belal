@@ -40,7 +40,7 @@ const G = {
   grow: '<path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/>',
   play: '<path d="M8 5.5v13l11-6.5z" fill="currentColor"/>',
   pause: '<path d="M8 5v14M16 5v14" stroke-width="3"/>',
-  back: '<path d="M9 5l7 7-7 7"/>', x: '<path d="M6 6l12 12M18 6L6 18"/>', open: '<path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>',
+  back: '<path d="M9 5l7 7-7 7"/>', pin: '<rect x="3" y="5" width="18" height="14" rx="2"/><rect x="11" y="11" width="8" height="6" rx="1" fill="currentColor"/>', x: '<path d="M6 6l12 12M18 6L6 18"/>', open: '<path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>',
 };
 
 // ---------------- الشاشة ----------------
@@ -51,21 +51,27 @@ function shell() {
   if (!s) { s = document.createElement('div'); s.id = 'wshell'; s.hidden = true; document.body.appendChild(s); }
   return s;
 }
+// شكل الفيديو: مثبّت فوق (بعرض بتختاره، يمين أو شمال) أو "عايم" في أي مكان على الشاشة. بيتحفظ
+const LAY0 = { mode: 'dock', w: 1, side: 'r', fr: 12, fy: 120, fw: 220 };
+const loadLay = () => { try { return { ...LAY0, ...JSON.parse(localStorage.getItem('nota.wlay') || '{}') }; } catch (e) { return { ...LAY0 }; } };
+const saveLay = () => { try { localStorage.setItem('nota.wlay', JSON.stringify(P.lay)); } catch (e) {} };
+const W_MIN = 0.34;
+
 function buildShell() {
   const s = shell(), yt = P.yt;
   s.className = ''; s.hidden = false;
   s.innerHTML = `
-    <div class="ws-bar">
-      <button type="button" class="ws-ic" data-act="w-back" aria-label="رجوع">${sv(G.back)}</button>
-      <div class="ws-t"><small>${P.kind === 'media' ? 'بتسمع' : 'بتتفرج'}</small><b>${esc(P.row.title)}</b></div>
-      <button type="button" class="ws-ic" data-act="w-menu" aria-label="خيارات الفيديو">${sv(G.more)}</button>
+    <div class="ws-win" id="wwin">
+      <div class="ws-vid"><div id="ytp"></div><div class="vid-msg" id="vmsg">بيحمّل الفيديو…</div></div>
+      <div class="ws-grip" data-drag="move" title="اسحب عشان تحرّك الفيديو"><span class="ws-knob" data-drag="size" aria-hidden="true"></span><i></i></div>
     </div>
-    <div class="ws-vid"><div id="ytp"></div><div class="vid-msg" id="vmsg">بيحمّل الفيديو…</div></div>
-    <div class="ws-meter" id="wmeter"></div>
+    <div class="ws-side" id="wmeter"></div>
     <div class="ws-tabs" id="wtabs" role="tablist">
-      ${yt.list ? `<button type="button" role="tab" data-act="w-tab" data-v="list">الفيديوهات <span class="ws-n" id="wcount"></span></button>` : ''}
-      <button type="button" role="tab" data-act="w-tab" data-v="notes">${ic('edit', 15)}الدفتر</button>
-      <button type="button" role="tab" data-act="w-tab" data-v="ask"><span class="ai-spark">✦</span>اسأل</button>
+      <button type="button" class="ws-ic" data-act="w-back" aria-label="رجوع">${sv(G.back)}</button>
+      ${yt.list ? `<button type="button" role="tab" class="ws-tab" data-act="w-tab" data-v="list">الفيديوهات <span class="ws-n" id="wcount"></span></button>` : ''}
+      <button type="button" role="tab" class="ws-tab" data-act="w-tab" data-v="notes">${ic('edit', 15)}الدفتر</button>
+      <button type="button" role="tab" class="ws-tab" data-act="w-tab" data-v="ask"><span class="ai-spark">✦</span>اسأل</button>
+      <button type="button" class="ws-ic" data-act="w-menu" aria-label="خيارات الفيديو">${sv(G.more)}</button>
     </div>
     <div class="ws-away">
       <button type="button" data-act="w-pp" aria-label="شغّل أو وقّف" id="wpp">${sv(G.pause)}</button>
@@ -73,33 +79,95 @@ function buildShell() {
       <button type="button" data-act="w-close" aria-label="اقفل الفيديو">${sv(G.x)}</button>
     </div>`;
   document.body.classList.add('w-on');
+  s.addEventListener('pointerdown', onDrag);
+  applyLay();
+}
+const kbOpen = () => !!VV && innerHeight - VV.height > 140;
+// بيطبّق الشكل: العرض والناحية (مثبّت) أو المكان والمقاس (عايم). والكيبورد مفتوح: المثبّت بيصغر لوحده
+function applyLay() {
+  const s = document.getElementById('wshell'); if (!s || s.hidden || !P) return;
+  const win = document.getElementById('wwin'), L = P.lay;
+  if (s.classList.contains('away')) { s.style.transform = ''; s.style.gridTemplateColumns = ''; s.style.gridTemplateAreas = ''; if (win) win.style.cssText = ''; return; }
+  const top = VV && VV.offsetTop ? VV.offsetTop : 0;
+  s.classList.toggle('float', L.mode === 'float');
+  if (L.mode === 'float') {
+    s.style.transform = ''; s.style.top = top + 'px';
+    s.style.gridTemplateColumns = ''; s.style.gridTemplateAreas = '';
+    const vw = innerWidth, vh = VV ? VV.height : innerHeight, fw = Math.max(150, Math.min(vw - 16, L.fw)), fh = fw * 9 / 16 + 24;
+    L.fr = Math.max(8, Math.min(vw - fw - 8, L.fr)); L.fy = Math.max(8, Math.min(vh - fh - 8, L.fy));
+    win.style.cssText = `width:${fw}px;right:${L.fr}px;top:${top + L.fy}px`;
+    P.kbSmall = false;
+  } else {
+    s.style.top = ''; s.style.transform = top ? `translateY(${top}px)` : '';
+    win.style.cssText = '';
+    let w = L.w; P.kbSmall = kbOpen() && w > 0.45; if (P.kbSmall) w = 0.42;
+    const full = w >= 0.97;
+    s.classList.toggle('full', full);
+    const pct = (w * 100).toFixed(1) + '%';
+    // الشاشة RTL: أول عمود على اليمين
+    s.style.gridTemplateColumns = full ? 'minmax(0,1fr)' : L.side === 'r' ? `${pct} minmax(0,1fr)` : `minmax(0,1fr) ${pct}`;
+    s.style.gridTemplateAreas = full ? '"win" "side" "tabs"' : L.side === 'r' ? '"win side" "tabs tabs"' : '"side win" "tabs tabs"';
+  }
+  s.classList.toggle('narrow', L.mode === 'float' || L.w < 0.97 || P.kbSmall);
   measure();
 }
-// المسافة اللي المحتوى بيسيبها فوق عشان البرواز. مش بنقيسها لما يصغر عشان الكيبورد، عشان الكلام اللي بتكتبه ميتنططش
+// المسافة اللي المحتوى بيسيبها فوق. مش بنغيّرها لما الفيديو يصغر عشان الكيبورد، عشان الكلام اللي بتكتبه ميتنططش
 function measure() {
   const s = shell();
-  if (s.hidden || s.classList.contains('away') || (P && P.kbMini)) return;
+  if (s.hidden || s.classList.contains('away') || (P && P.kbSmall)) return;
   document.body.style.setProperty('--wsh', s.offsetHeight + 'px');
 }
-// صغير ولا كبير؟ اختيارك بيكسب. لو مختارتش: الفيديوهات = كبير، الدفتر واسأل = صغير، والكيبورد مفتوح = صغير
-const baseMini = () => P.size ? P.size === 'mini' : P.tab !== 'list';
-const kbOpen = () => !!VV && innerHeight - VV.height > 140;
-// البرواز بيمشي مع الشاشة الظاهرة (لما الكيبورد يفتح آيفون بيزق الصفحة)، وبيصغر لوحده وإنت بتكتب
-function place() {
-  const s = document.getElementById('wshell'); if (!s || s.hidden || !P) return;
-  if (s.classList.contains('away')) { s.style.transform = ''; return; }
-  s.style.transform = VV && VV.offsetTop ? `translateY(${VV.offsetTop}px)` : '';
-  const base = baseMini(), mini = base || (kbOpen() && P.size !== 'big');
-  P.kbMini = mini && !base;
-  if (s.classList.contains('mini') !== mini) { s.classList.toggle('mini', mini); paintAll(); }
-  measure();
+function place() { applyLay(); }
+
+// ---------- السحب: تكبير/تصغير من الركن، وتحريك من الشريط اللي تحت الفيديو ----------
+function onDrag(e) {
+  const h = e.target.closest('[data-drag]'); if (!h || !P) return;
+  e.preventDefault(); e.stopPropagation();
+  const s = shell(), win = document.getElementById('wwin'), L = P.lay, kind = h.dataset.drag;
+  const x0 = e.clientX, y0 = e.clientY, r0 = win.getBoundingClientRect(), sr = s.getBoundingClientRect();
+  const pad = 10, inner = sr.width - pad * 2, startW = r0.width;
+  s.classList.add('dragging'); try { h.setPointerCapture(e.pointerId); } catch (_) {}
+  let dx = 0, dy = 0;
+  const move = ev => {
+    dx = ev.clientX - x0; dy = ev.clientY - y0;
+    if (kind === 'size') {
+      if (L.mode === 'float') { L.fw = Math.max(150, Math.min(innerWidth - 16, startW - dx)); }   // الركن الشمال: شمال = أكبر
+      else {
+        const px = L.side === 'r' ? (sr.right - pad) - ev.clientX : ev.clientX - (sr.left + pad);
+        let w = Math.max(W_MIN, Math.min(1, px / inner)); if (w > 0.94) w = 1; L.w = w;
+      }
+      applyLay();
+    } else if (L.mode === 'float') {
+      L.fr = (innerWidth - r0.right) - dx; L.fy = r0.top - (VV ? VV.offsetTop : 0) + dy; applyLay();
+    } else {
+      win.style.transform = `translate(${dx}px,${Math.max(0, dy)}px)`;
+      s.classList.toggle('drop-float', dy > 70);
+    }
+  };
+  const up = () => {
+    h.removeEventListener('pointermove', move); h.removeEventListener('pointerup', up); h.removeEventListener('pointercancel', up);
+    s.classList.remove('dragging', 'drop-float');
+    if (kind === 'move' && L.mode === 'dock') {
+      win.style.transform = '';
+      if (dy > 70) {   // نزّلته لتحت: بقى عايم في المكان اللي سبته فيه
+        L.mode = 'float'; L.fw = Math.max(160, Math.min(r0.width, innerWidth * 0.6));
+        L.fr = Math.max(8, innerWidth - r0.right - dx); L.fy = Math.max(8, r0.top + dy - (VV ? VV.offsetTop : 0));
+      } else if (Math.abs(dx) > 50) {   // سحبته يمين أو شمال: ينقل الناحية دي (ولو كان بعرض الشاشة يصغر للنص)
+        if (L.w >= 0.97) L.w = 0.55;
+        L.side = dx > 0 ? 'r' : 'l';
+      }
+    }
+    applyLay(); paintAll(); saveLay();
+  };
+  h.addEventListener('pointermove', move); h.addEventListener('pointerup', up); h.addEventListener('pointercancel', up);
 }
+
 let burst = 0;
 function placeSoon() { cancelAnimationFrame(burst); const t0 = performance.now(); const go = () => { place(); if (performance.now() - t0 < 700) burst = requestAnimationFrame(go); }; go(); }
 VV?.addEventListener('resize', placeSoon); VV?.addEventListener('scroll', place);
 window.addEventListener('scroll', place, { passive: true });
 document.addEventListener('focusin', placeSoon); document.addEventListener('focusout', () => setTimeout(placeSoon, 50));
-window.addEventListener('resize', () => { measure(); place(); });
+window.addEventListener('resize', () => { applyLay(); });
 
 function setTab(v) {
   if (!P) return;
@@ -135,14 +203,14 @@ export default {
       if (P && P.wid === p.id && P.player) {
         if (P.box === box && box.isConnected) { paintAll(); return; }
         P.box = box; P.notes = null;
-        shell().classList.remove('away'); document.body.classList.add('w-on');
+        shell().classList.remove('away'); document.body.classList.add('w-on'); applyLay();
         paintAll(); setTab(P.tab || (P.yt.list ? 'list' : 'notes')); placeSoon();
         return;
       }
       await stop();
       const k = kindOf(p.id), id = p.id.slice(2), row = await one(tableOf(k), id);
       const yt = ytOf(row.url);
-      P = { box, wid: p.id, kind: k, id, row, yt, watch: JSON.parse(JSON.stringify(row.watch || {})), lastPos: {}, wall: 0, sessStart: null, dirty: false, timer: null, player: null, tab: yt.list ? 'list' : 'notes', size: '' };
+      P = { box, wid: p.id, kind: k, id, row, yt, watch: JSON.parse(JSON.stringify(row.watch || {})), lastPos: {}, wall: 0, sessStart: null, dirty: false, timer: null, player: null, tab: yt.list ? 'list' : 'notes', lay: loadLay() };
       P.watch.v ||= {};
       const sp = Number(localStorage.getItem('nota.speed')) || 1; P.speed = sp;
       buildShell(); paintAll(); setTab(P.tab);
@@ -186,7 +254,8 @@ export default {
         P.speed = s; try { P.player?.setPlaybackRate(s); } catch (e) {}
         localStorage.setItem('nota.speed', s); paintAll();
       },
-      'w-size'() { if (!P) return; P.size = shell().classList.contains('mini') ? 'big' : 'mini'; if (P.size === 'big' && kbOpen()) document.activeElement?.blur(); place(); },
+      'w-float'() { if (!P) return; const L = P.lay; L.mode = L.mode === 'float' ? 'dock' : 'float'; if (L.mode === 'float') { L.fw = Math.min(L.fw || 220, innerWidth * 0.6); L.fr = 12; L.fy = (shell().offsetHeight || 120) + 10; } applyLay(); paintAll(); saveLay(); },
+      'w-wide'() { if (!P) return; const L = P.lay; L.mode = 'dock'; L.w = L.w >= 0.97 ? 0.5 : 1; applyLay(); paintAll(); saveLay(); },
       'w-back'() { if (history.length > 1) history.back(); else location.hash = '#/courses'; },
       'w-menu'() {
         if (!P) return;
@@ -194,6 +263,7 @@ export default {
           <button class="btn" data-act="w-start">🏁 خلصت جزء قبل كده؟ حدد نقطة البداية</button>
           ${P.row.url ? `<a class="btn" href="${esc(/^https?:/i.test(P.row.url) ? P.row.url : 'https://' + P.row.url)}" target="_blank" rel="noopener">${sv(G.open)} افتحه على يوتيوب</a>` : ''}
           <p class="mut" style="margin:6px 2px 0;line-height:1.7">النوتة بتحسب الوقت اللي اتفرجته فعلًا: لو قدّمت الفيديو، الجزء اللي فوّته مش بيتحسب. والفيديو اللي تخلص 90% منه بيتعلّم إنه خلص.</p>
+          <p class="mut" style="margin:0 2px;line-height:1.7">تكبير وتصغير: اسحب الركن ◢ اللي تحت الفيديو. تحريك: اسحب الشريط اللي تحت الفيديو يمين أو شمال، أو لتحت عشان يبقى عايم وتحطه في أي مكان.</p>
           <p class="mut" style="margin:0 2px;line-height:1.7">لو سبت الصفحة والفيديو شغال، هيصغر في الركن ويكمّل وإنت بتتنقل في النوتة.</p>
         </div>`);
       },
@@ -356,7 +426,7 @@ async function stop() {
   await save(); await flushDay();
   try { P && P.player && P.player.destroy(); } catch (e) {}
   P = null;
-  const s = document.getElementById('wshell'); if (s) { s.hidden = true; s.innerHTML = ''; s.className = ''; s.style.transform = ''; }
+  const s = document.getElementById('wshell'); if (s) { s.hidden = true; s.innerHTML = ''; s.className = ''; s.style.cssText = ''; }
   document.body.classList.remove('w-on');
 }
 // سبت صفحة الفيديو: لو شغال يصغر في الركن ويكمّل، ولو واقف يتقفل ويتحفظ
@@ -367,7 +437,7 @@ function leave() {
   try { P.notes && P.notes.destroy && P.notes.destroy(); } catch (e) {}
   P.notes = null; aiReset(); save();
   document.body.classList.remove('w-on');
-  const s = shell(); s.classList.remove('mini'); s.classList.add('away'); s.style.transform = '';
+  const s = shell(); s.classList.remove('float', 'narrow', 'full'); s.classList.add('away'); s.style.top = ''; applyLay();
   paintPP();
 }
 window.addEventListener('hashchange', () => { if (P && !location.hash.startsWith('#/watch/' + P.wid)) leave(); });
@@ -413,13 +483,16 @@ function meterCells(t) {
 }
 function paintAll() {
   if (!P) return;
-  const t = totals(), pct = t.d ? Math.min(100, t.w / t.d * 100) : 0, mini = shell().classList.contains('mini');
+  const t = totals(), pct = t.d ? Math.min(100, t.w / t.d * 100) : 0, L = P.lay, narrow = L.mode === 'float' || L.w < 0.97 || P.kbSmall;
   const me = document.getElementById('wmeter');
   if (me) me.innerHTML = `<div class="wm-cells" role="img" aria-label="اتفرجت ${Math.round(pct)}%">${meterCells(t)}</div>
     <div class="wm-row">
-      <span class="wm-txt"><b class="num">${Math.round(pct)}%</b>${P.yt.list && t.count ? ` · <span class="num">${t.done}/${t.count}</span> فيديو` : ''}${!mini && t.w >= 60 ? ` · اتفرجت ${durWords(t.w / 60)}${t.d ? ` من ${durWords(t.d / 60)}` : ''}` : ''}</span>
-      <button type="button" class="wm-chip num" data-act="w-speed" aria-label="السرعة ${P.speed}x، دوس تغيّرها">${P.speed}x</button>
-      <button type="button" class="wm-chip wm-ic" data-act="w-size" aria-label="${mini ? 'كبّر الفيديو' : 'صغّر الفيديو'}">${sv(mini ? G.grow : G.shrink)}</button>
+      <span class="wm-txt"><b class="num">${Math.round(pct)}%</b>${P.yt.list && t.count ? ` · <span class="num">${t.done}/${t.count}</span>` : ''}${!narrow && t.w >= 60 ? ` · اتفرجت ${durWords(t.w / 60)}${t.d ? ` من ${durWords(t.d / 60)}` : ''}` : ''}</span>
+      <span class="wm-btns">
+        <button type="button" class="wm-chip num" data-act="w-speed" aria-label="السرعة ${P.speed}x، دوس تغيّرها">${P.speed}x</button>
+        ${L.mode === 'dock' ? `<button type="button" class="wm-chip wm-ic" data-act="w-wide" aria-label="${L.w >= 0.97 ? 'صغّر الفيديو للنص' : 'كبّر الفيديو لعرض الشاشة'}">${sv(L.w >= 0.97 ? G.shrink : G.grow)}</button>` : ''}
+        <button type="button" class="wm-chip wm-ic${L.mode === 'float' ? ' on' : ''}" data-act="w-float" aria-label="${L.mode === 'float' ? 'ثبّت الفيديو فوق' : 'خلّي الفيديو عايم تحرّكه في أي مكان'}">${sv(G.pin)}</button>
+      </span>
     </div>`;
   const cn = document.getElementById('wcount'); if (cn) cn.textContent = t.count ? `${t.done}/${t.count}` : '';
   const le = document.getElementById('wlist'); if (!le || !P.yt.list) return;

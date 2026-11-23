@@ -487,60 +487,71 @@ body.nt-open .fab{display:none}
 
 
 /* ============ شاشة الفيديو (البرواز) ============ */
-/* الفيديو في برواز غامق ثابت فوق، زي شاشة موبايل على حصيرة الصيانة.
+/* الفيديو في برواز غامق فوق، زي شاشة موبايل على حصيرة الصيانة. إنت بتحدد عرضه وناحيته، أو تخليه عايم.
    التبويب المختار لونه زي الورقة اللي تحت، فبيبان كأنه "لسان" الورقة طالع من البرواز */
 body.w-on #top{display:none}
-body.w-on main{padding-top:calc(var(--wsh,320px) + 12px)}
+body.w-on main{padding:calc(var(--wsh,300px) + 8px) 10px calc(120px + var(--safe-b))}
 body.w-on .fab{display:none}
 #wshell{position:fixed;z-index:22;top:0;left:0;right:0;max-width:560px;margin:0 auto;background:var(--dock);color:#E8EDF1;
-  padding:calc(4px + var(--safe-t)) 10px 0;border-radius:0 0 22px 22px;box-shadow:0 12px 28px rgba(0,0,0,.28);
-  display:grid;grid-template-columns:minmax(0,1fr);grid-template-areas:"bar" "vid" "meter" "tabs";column-gap:12px}
+  padding:calc(6px + var(--safe-t)) 10px 0;border-radius:0 0 20px 20px;box-shadow:0 10px 26px rgba(0,0,0,.26);
+  display:grid;grid-template-columns:minmax(0,1fr);grid-template-areas:"win" "side" "tabs";column-gap:10px;align-items:start}
 #wshell[hidden]{display:none}
-.ws-bar{grid-area:bar;display:flex;align-items:center;gap:8px;height:48px}
-.ws-ic{flex:none;width:40px;height:40px;border-radius:20px;border:0;background:rgba(255,255,255,.08);color:inherit;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
-.ws-ic:active{transform:scale(.92)}
-.ws-t{flex:1;min-width:0;line-height:1.25}
-.ws-t small{display:block;font-size:11px;color:#8F9CA8;letter-spacing:.2px}
-.ws-t b{display:block;font:600 16px "Reem Kufi",system-ui,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ws-vid{grid-area:vid;position:relative;aspect-ratio:16/9;border-radius:12px;overflow:hidden;background:#000;box-shadow:0 0 0 1px rgba(255,255,255,.07)}
+.ws-win{grid-area:win;position:relative;min-width:0}
+.ws-vid{position:relative;aspect-ratio:16/9;border-radius:11px;overflow:hidden;background:#000;box-shadow:0 0 0 1px rgba(255,255,255,.07)}
 .ws-vid #ytp,.ws-vid iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
-.ws-vid .vid-msg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:16px;text-align:center;color:#C9D2D9;font-size:13.5px;line-height:1.7;pointer-events:none}
-.ws-meter{grid-area:meter;padding:10px 2px 4px;min-width:0}
-/* العدّاد: خانة لكل فيديو، بتتملي من اليمين */
+#wshell.dragging iframe{pointer-events:none}
+.ws-vid .vid-msg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:12px;text-align:center;color:#C9D2D9;font-size:13px;line-height:1.6;pointer-events:none}
+/* الشريط اللي تحت الفيديو: من النص تحرّكه، ومن الركن تكبّره أو تصغّره */
+.ws-grip{position:relative;height:22px;display:flex;align-items:center;justify-content:center;touch-action:none;cursor:grab;user-select:none;-webkit-user-select:none}
+.ws-grip>i{width:38px;height:4px;border-radius:2px;background:rgba(255,255,255,.28)}
+.ws-knob{position:absolute;top:0;width:30px;height:22px;touch-action:none;cursor:nwse-resize;left:0}
+.ws-knob::before{content:"";position:absolute;left:6px;top:3px;width:12px;height:12px;border-left:2.5px solid var(--amb);border-bottom:2.5px solid var(--amb);border-radius:0 0 0 4px}
+#wshell:not(.float)[style*='"side win"'] .ws-knob{left:auto;right:0}
+#wshell:not(.float)[style*='"side win"'] .ws-knob::before{left:auto;right:6px;border-left:0;border-right:2.5px solid var(--amb);border-radius:0 0 4px 0}
+#wshell.dragging .ws-grip{cursor:grabbing}
+#wshell.dragging .ws-grip>i,#wshell.dragging .ws-knob::before{background:var(--amb)}
+#wshell.drop-float .ws-win{opacity:.75;outline:2px dashed var(--amb);outline-offset:3px;border-radius:12px}
+.ws-side{grid-area:side;padding:2px 2px 4px;min-width:0;align-self:center}
+#wshell.narrow .ws-side{padding:4px 0}
 .wm-cells{display:flex;gap:2px;height:7px}
 .wm-cells i{flex:1;min-width:2px;border-radius:2px;background:linear-gradient(to left,var(--amb) var(--f,0%),rgba(255,255,255,.13) var(--f,0%))}
 .wm-cells i.ok{background:var(--ok)}
 .wm-cells i.here{box-shadow:0 0 0 1.5px #fff;animation:wmHere 1.6s ease-in-out infinite}
 @keyframes wmHere{50%{box-shadow:0 0 0 1.5px rgba(255,255,255,.35)}}
-.wm-row{display:flex;align-items:center;gap:6px;margin-top:6px;min-height:32px}
+.wm-row{display:flex;align-items:center;gap:6px;margin-top:6px;flex-wrap:wrap;row-gap:6px}
 .wm-txt{flex:1;min-width:0;font-size:12.5px;color:#9EABB7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#wshell.narrow .wm-txt{flex:1 0 100%}
 .wm-txt b,.wm-txt .num{color:#fff;font-weight:500}
+.wm-btns{display:flex;gap:6px;flex:none}
 .wm-chip{flex:none;height:30px;min-width:44px;padding:0 10px;border-radius:15px;border:1px solid rgba(255,255,255,.18);background:none;color:#fff;font-size:12.5px;cursor:pointer;display:flex;align-items:center;justify-content:center}
 .wm-chip.wm-ic{min-width:30px;width:30px;padding:0}
+.wm-chip.on{background:var(--amb);border-color:var(--amb);color:#15202B}
 .wm-chip .ic{width:16px;height:16px}
-.ws-tabs{grid-area:tabs;display:flex;gap:4px;padding:6px 0 0}
-.ws-tabs button{flex:1;min-height:40px;border:0;border-radius:13px 13px 0 0;background:none;color:#9EABB7;font-size:14px;font-weight:500;display:flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;padding:0 6px}
-.ws-tabs button.on{background:var(--mat);color:var(--ink)}
-.ws-tabs .ic{width:15px;height:15px}
+/* صف التبويبات: رجوع + التبويبات + ⋯ في سطر واحد */
+.ws-tabs{grid-area:tabs;display:flex;align-items:flex-end;gap:2px;padding-top:4px}
+.ws-ic{flex:none;width:36px;height:36px;margin-bottom:3px;border-radius:18px;border:0;background:rgba(255,255,255,.08);color:inherit;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
+.ws-ic .ic{width:18px;height:18px}
+.ws-tab{flex:1;min-width:0;min-height:40px;border:0;border-radius:12px 12px 0 0;background:none;color:#9EABB7;font-size:14px;font-weight:500;display:flex;align-items:center;justify-content:center;gap:5px;cursor:pointer;padding:0 4px;white-space:nowrap}
+.ws-tab.on{background:var(--mat);color:var(--ink)}
+.ws-tab .ic{width:15px;height:15px}
 .ws-n{font:500 11px "IBM Plex Mono",monospace;opacity:.75}
 .ws-away{display:none}
-/* صغير وإنت بتكتب: الفيديو على جنب والعدّاد جنبه */
-#wshell.mini{grid-template-columns:44% minmax(0,1fr);grid-template-areas:"vid meter" "tabs tabs";padding-top:calc(8px + var(--safe-t))}
-#wshell.mini .ws-bar{display:none}
-#wshell.mini .ws-vid{border-radius:9px}
-#wshell.mini .ws-meter{padding:0;align-self:center}
-#wshell.mini .wm-row{flex-wrap:wrap;row-gap:4px}
-#wshell.mini .wm-txt{flex:1 0 100%}
-#wshell.mini .ws-tabs button{min-height:36px}
+/* عايم: الفيديو شباك صغير تحطه في أي مكان، والبرواز فوق بيبقى العدّاد والتبويبات بس */
+#wshell.float{grid-template-areas:"side" "tabs"}
+#wshell.float .ws-win{position:fixed;z-index:23;background:var(--dock);padding:5px 5px 0;border-radius:14px;box-shadow:0 14px 34px rgba(0,0,0,.45),0 0 0 1px rgba(255,255,255,.08)}
+#wshell.float .ws-vid{border-radius:10px}
+#wshell.float .wm-txt{flex:1;min-width:0}
 /* سبت الصفحة والفيديو شغال: برواز صغير في الركن فوق الشريط اللي تحت */
-#wshell.away{top:auto;right:auto;left:12px;bottom:calc(96px + var(--safe-b));width:min(216px,56vw);margin:0;padding:6px;border-radius:16px;grid-template-areas:"vid" "away";transform:none!important;animation:wsAway .25s cubic-bezier(.2,.8,.2,1)}
+#wshell.away{top:auto;right:auto;left:12px;bottom:calc(96px + var(--safe-b));width:min(216px,56vw);margin:0;padding:6px;border-radius:16px;grid-template-columns:minmax(0,1fr)!important;grid-template-areas:"win" "away"!important;transform:none!important;animation:wsAway .25s cubic-bezier(.2,.8,.2,1)}
 body.no-dock #wshell.away{bottom:calc(16px + var(--safe-b))}
-#wshell.away .ws-bar,#wshell.away .ws-meter,#wshell.away .ws-tabs{display:none}
+#wshell.away .ws-side,#wshell.away .ws-tabs,#wshell.away .ws-grip{display:none}
 #wshell.away .ws-vid{border-radius:10px}
 #wshell.away .ws-away{grid-area:away;display:flex;gap:6px;padding-top:6px}
 .ws-away button{flex:1;height:34px;border-radius:10px;border:0;background:rgba(255,255,255,.1);color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
 .ws-away button .ic{width:18px;height:18px}
 @keyframes wsAway{from{opacity:0;transform:translateY(20px) scale(.9)}to{opacity:1;transform:none}}
+/* الصفحة ليها آخر: من غير مطّ لما تسحب فوق أو تحت */
+html,body{overscroll-behavior:none}
 
 /* قايمة الفيديوهات */
 .watch{min-height:50vh}
@@ -559,7 +570,7 @@ body.no-dock #wshell.away{bottom:calc(16px + var(--safe-b))}
 .wl-bar i{display:block;height:100%;background:var(--amb);margin-inline-start:auto;margin-inline-end:0}
 
 /* الدفتر جوه شاشة الفيديو: ورقة أهدى ومساحة أكتر */
-.watch .nt-doc{border-radius:14px;padding:14px 12px 22px;padding-inline-start:34px;background:linear-gradient(to left,transparent 22px,var(--nt-margin) 22px,var(--nt-margin) 23.5px,transparent 23.5px),var(--paper)}
+.watch .nt-doc{border-radius:12px;padding:12px 10px 20px;padding-inline-start:30px;background:linear-gradient(to left,transparent 19px,var(--nt-margin) 19px,var(--nt-margin) 20.5px,transparent 20.5px),var(--paper)}
 .watch .nt-st{padding:0 4px}
 .nt-forkbtn{width:26px;height:26px;border-radius:13px;background:var(--paper)!important;border:1px solid var(--line)!important;color:var(--mut)!important;font-size:13px;box-shadow:none!important}
 
@@ -608,3 +619,17 @@ body.no-dock #wshell.away{bottom:calc(16px + var(--safe-b))}
 .nt-ted-bar{background:color-mix(in srgb,var(--paper) 92%,transparent);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-top:1px solid var(--line);padding:8px 10px calc(8px + var(--safe-b));display:flex;flex-direction:column;gap:8px}
 .nt-ted-bar .nt-row button{min-height:38px}
 @media (prefers-reduced-motion:reduce){.nt-ted,#wshell.away,.wm-cells i.here{transition:none;animation:none}}
+
+/* اختيار مقاس الجدول */
+.nt-gpan{align-items:stretch}
+.nt-gsz{display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:0 2px}
+.nt-gsz b{font:600 17px "Reem Kufi",system-ui,sans-serif;color:var(--ink)}
+.nt-gsz .mut{font-size:11.5px}
+.nt-gwrap{display:flex;justify-content:center}
+.nt-gp{display:grid;grid-template-columns:repeat(var(--gc),28px);grid-auto-rows:22px;gap:4px;touch-action:none;user-select:none;-webkit-user-select:none;padding:4px}
+.nt-gp span{border-radius:5px;border:1px solid var(--line);background:var(--mat);transition:background-color .08s}
+.nt-gp span.on{background:var(--amb);border-color:var(--amb)}
+.nt-gp span[data-gr="1"].on{background:color-mix(in srgb,var(--amb) 70%,var(--ink))}
+.nt-gok{min-height:42px;border-radius:12px;border:0;background:var(--amb);color:#15202B;font-weight:600;font-size:15px;cursor:pointer}
+.nt-gok:disabled{background:var(--mat);color:var(--mut);border:1px solid var(--line)}
+.nt-gpan{max-height:none}

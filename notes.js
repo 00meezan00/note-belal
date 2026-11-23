@@ -120,14 +120,18 @@ export async function mountNotes(host, { table, id, now, seek, label }) {
     <div class="nt-pan nt-menu" data-p="more" hidden>
       <div class="nt-mg"><span class="nt-mgl">السطر ده</span><div class="nt-row">
         <button type="button" data-a="tasknow">☑️ مهمة النهاردة</button><button type="button" data-a="lesson">📘 درس اتعلمته</button>
-        <button type="button" data-a="up" aria-label="طلّع السطر">↑</button><button type="button" data-a="down" aria-label="نزّل السطر">↓</button><button type="button" data-a="del" class="bad">امسحه</button></div></div>
+        <button type="button" data-a="up" aria-label="طلّع السطر">↑</button><button type="button" data-a="down" aria-label="نزّل السطر">↓</button><button type="button" data-a="del" class="bad">امسح السطر</button><button type="button" data-a="delsec" class="bad">امسح القسم كله</button></div></div>
       <div class="nt-mg"><span class="nt-mgl">ضيف</span><div class="nt-row">
         <button type="button" data-a="hr">➖ خط فاصل</button><button type="button" data-a="tpl">🧩 قالب ملخص كورس</button></div></div>
       <div class="nt-mg"><span class="nt-mgl">الدفتر</span><div class="nt-row">
         <button type="button" data-a="panel" data-p="toc">📑 الفهرس</button><button type="button" data-a="panel" data-p="find">🔎 دوّر</button>
         <button type="button" data-a="foldall">🗂 اطوي الأقسام</button><button type="button" data-a="map">🧠 خريطة</button><button type="button" data-a="pdf">📄 PDF</button></div></div>
     </div>
-    <div class="nt-pan" data-p="grid" hidden><div class="mut nt-plab nt-glab">اختار حجم الجدول</div><div class="nt-gp">${Array.from({ length: 8 }, (_, r) => Array.from({ length: 8 }, (_, c) => `<button type="button" data-a="mktable" data-r="${r + 1}" data-c="${c + 1}"></button>`).join('')).join('')}</div></div>
+    <div class="nt-pan nt-gpan" data-p="grid" hidden>
+      <div class="nt-gsz"><b class="nt-glab">اسحب صباعك على المربعات</b><span class="mut">أول صف هيبقى العناوين</span></div>
+      <div class="nt-gwrap"><div class="nt-gp" style="--gr:10;--gc:8">${Array.from({ length: 10 }, (_, r) => Array.from({ length: 8 }, (_, c) => `<span data-gr="${r + 1}" data-gc="${c + 1}"></span>`).join('')).join('')}</div></div>
+      <button type="button" class="nt-gok" data-a="mktable" data-r="3" data-c="3" disabled>اختار المقاس الأول</button>
+    </div>
     <div class="nt-pan" data-p="toc" hidden><div class="nt-toc"></div></div>
     <div class="nt-pan" data-p="find" hidden><div class="nt-row"><input class="inp nt-q" placeholder="دوّر على كلمة…" enterkeyhint="search"><span class="mut nt-qn"></span><button type="button" data-a="qprev" aria-label="اللي قبله">↑</button><button type="button" data-a="qnext" aria-label="اللي بعده">↓</button></div></div>
     <div class="nt-main">
@@ -364,7 +368,7 @@ export async function mountNotes(host, { table, id, now, seek, label }) {
     cur = bid;
     const ov = document.createElement('div');
     ov.className = 'nt-ted'; ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-label', 'تعديل الجدول');
-    ov.innerHTML = `<div class="nt-ted-hd"><button type="button" class="nt-ted-x" data-ta="del" aria-label="امسح الجدول">🗑</button><b>الجدول</b><span class="mut num nt-ted-sz"></span><span style="flex:1"></span><button type="button" class="nt-ted-ok" data-ta="done">تم</button></div>
+    ov.innerHTML = `<div class="nt-ted-hd"><button type="button" class="nt-ted-x" data-ta="del" aria-label="امسح الجدول">🗑</button><b>الجدول</b><span class="mut nt-ted-sz"></span><span style="flex:1"></span><button type="button" class="nt-ted-x" data-ta="undo" aria-label="تراجع">${svg(I.undo)}</button><button type="button" class="nt-ted-x" data-ta="redo" aria-label="إعادة">${svg(I.redo)}</button><button type="button" class="nt-ted-ok" data-ta="done">تم</button></div>
       <div class="nt-ted-sc" data-id="${b.id}"></div>
       <div class="nt-ted-bar">
         <div class="nt-row nt-dots nt-ted-cols" hidden><span class="mut nt-plab">لون الصف</span>${dots('color', '').replace(/data-a="color"/g, 'data-ta="color"')}</div>
@@ -418,6 +422,14 @@ export async function mountNotes(host, { table, id, now, seek, label }) {
     if (!TE) return;
     const b = TE.b, R = b.rows, cols = R[0].length; let [r, c] = TE.cell;
     if (a === 'done') return closeTable();
+    if (a === 'undo' || a === 'redo') {
+      remember(); const bid = b.id;
+      if (a === 'undo' ? hi <= 0 : hi >= hist.length - 1) return;
+      hi += a === 'undo' ? -1 : 1; B = JSON.parse(hist[hi]); paintUndo();
+      const nb = get(bid); if (!nb) { closeTable(true); draw(); save(); return; }
+      TE.b = nb; const rr = Math.min(r, nb.rows.length - 1), cc = Math.min(c, nb.rows[0].length - 1);
+      paintT([rr, cc]); dirty = true; clearTimeout(saveT); saveT = setTimeout(flush, 700); return;
+    }
     if (a === 'pal') { const p = TE.ov.querySelector('.nt-ted-cols'); p.hidden = !p.hidden; btn.classList.toggle('on', !p.hidden); fitTE(); return; }
     if (a === 'del') { const i = idx(b.id); closeTable(true); B.splice(i, 1); if (!B.length) B.push({ id: nid(), type: 'p', text: '', indent: 0 }); cur = B[Math.max(0, i - 1)].id; draw(); save(); return toast('الجدول اتمسح', () => undo()); }
     remember();
@@ -427,7 +439,7 @@ export async function mountNotes(host, { table, id, now, seek, label }) {
     else if (a === 'col-') { if (cols <= 1) return; R.forEach(x => x.splice(c, 1)); b.cw.splice(c, 1); c = Math.max(0, c - 1); }
     else if (a === 'color') { (b.rc ||= [])[r] = btn.dataset.col || ''; }
     else if (a === 'fit') { b.cw = Array(cols).fill(COLW); b.rh = []; }
-    paintT([r, c]); save();
+    paintT([r, c]); save(); remember();
   }
   function closeTable(silent) {
     if (!TE) return;
@@ -520,10 +532,22 @@ export async function mountNotes(host, { table, id, now, seek, label }) {
   dock.addEventListener('pointerdown', e => { if (e.target.closest('button')) e.preventDefault(); });
   forkBtn.addEventListener('pointerdown', e => e.preventDefault());
   host.querySelector('.nt-add').addEventListener('pointerdown', e => e.preventDefault());
-  const gp = dock.querySelector('.nt-gp'), glab = dock.querySelector('.nt-glab');
-  const markGrid = (r, c) => { gp.querySelectorAll('button').forEach(x => x.classList.toggle('on', +x.dataset.r <= r && +x.dataset.c <= c)); glab.textContent = r ? `${r} ${r <= 10 ? 'صفوف' : 'صف'} × ${c} ${c <= 10 ? 'أعمدة' : 'عمود'} (أول صف عناوين)` : 'اختار حجم الجدول'; };
-  gp.addEventListener('pointerover', e => { const x = e.target.closest('button'); if (x) markGrid(+x.dataset.r, +x.dataset.c); });
-  gp.addEventListener('pointerleave', () => markGrid(0, 0));
+  // اختيار مقاس الجدول: تدوس أو تسحب صباعك على المربعات، والمقاس مكتوب كبير فوق، وبعدين "اعمل الجدول"
+  const gp = dock.querySelector('.nt-gp'), glab = dock.querySelector('.nt-glab'), gok = dock.querySelector('.nt-gok');
+  const word = (k, one, two, few, many) => k === 1 ? one : k === 2 ? two : k <= 10 ? `${k} ${few}` : `${k} ${many}`;
+  const markGrid = (r, c) => {
+    gp.querySelectorAll('span').forEach(x => x.classList.toggle('on', +x.dataset.gr <= r && +x.dataset.gc <= c));
+    glab.textContent = r ? `${word(r, 'صف واحد', 'صفين', 'صفوف', 'صف')} × ${word(c, 'عمود واحد', 'عمودين', 'أعمدة', 'عمود')}` : 'اسحب صباعك على المربعات';
+    gok.disabled = !r; gok.dataset.r = r; gok.dataset.c = c; gok.textContent = r ? `اعمل الجدول (${r} × ${c})` : 'اختار المقاس الأول';
+  };
+  const cellAt = e => { const el = document.elementFromPoint(e.clientX, e.clientY); return el && el.closest && el.closest('.nt-gp span'); };
+  gp.addEventListener('pointerdown', e => {
+    e.preventDefault(); try { gp.setPointerCapture(e.pointerId); } catch (_) {}
+    const pick = ev => { const x = cellAt(ev); if (x) markGrid(+x.dataset.gr, +x.dataset.gc); };
+    pick(e);
+    const up = () => { gp.removeEventListener('pointermove', pick); gp.removeEventListener('pointerup', up); gp.removeEventListener('pointercancel', up); };
+    gp.addEventListener('pointermove', pick); gp.addEventListener('pointerup', up); gp.addEventListener('pointercancel', up);
+  });
 
   async function onAct(btn) {
     const a = btn.dataset.a, cmd = btn.dataset.cmd;
@@ -574,7 +598,7 @@ export async function mountNotes(host, { table, id, now, seek, label }) {
       const r = +btn.dataset.r, c = +btn.dataset.c;
       const tb = after(b, { id: nid(), type: 'table', indent: 0, rows: Array.from({ length: r }, () => Array(c).fill('')), cw: Array(c).fill(COLW), rh: [], rc: [] });
       if (idx(tb.id) === B.length - 1) B.push({ id: nid(), type: 'p', text: '', indent: 0 });
-      markGrid(0, 0); cur = tb.id; showPanel('', true); draw(); save(); return openTable(tb.id, [0, 0]);
+      markGrid(0, 0); cur = tb.id; showPanel('', true); draw(); save(); remember(); return openTable(tb.id, [0, 0]);
     } else if (a === 'time') {
       const tm = now && now(); if (tm == null) return;
       const v = tm.v || null, vn = tm.vn || null;
@@ -623,6 +647,14 @@ export async function mountNotes(host, { table, id, now, seek, label }) {
       if (B.length === 1) { B[0] = { id: nid(), type: 'h1', text: '', indent: 0 }; cur = B[0].id; draw(cur, 0); }
       else { B.splice(i, 1); const p = B[Math.max(0, i - 1)]; cur = p.id; draw(p.id, null, p.type === 'table' ? [0, 0] : null); }
       toast('السطر اتمسح', () => undo());
+    } else if (a === 'delsec') {
+      // القسم = العنوان اللي إنت تحته + كل اللي تحته لحد العنوان اللي بعده من نفس المستوى أو أكبر
+      let h = i; while (h >= 0 && !LV[B[h].type]) h--;
+      if (h < 0) return toast('السطر ده مش تحت أي عنوان أو قسم');
+      const lv = LV[B[h].type]; let e = h + 1; while (e < B.length && !(LV[B[e].type] && LV[B[e].type] <= lv)) e++;
+      const n = e - h; B.splice(h, n); if (!B.length) B.push({ id: nid(), type: 'h1', text: '', indent: 0 });
+      const p = B[Math.max(0, h - 1)]; cur = p.id; showPanel('', true); draw(p.id, null);
+      toast(`اتمسح ${n === 1 ? 'سطر' : n === 2 ? 'سطرين' : n + ' سطور'}`, () => undo());
     } else if (a === 'rowat' || a === 'colat') {
       const tb = get(btn.closest('.nt-b').dataset.id), R = tb.rows, nc = R[0].length; cur = tb.id;
       if (a === 'rowat') { const r = +btn.dataset.r + 1; R.splice(r, 0, Array(nc).fill('')); (tb.rh ||= []).splice(r, 0, null); (tb.rc ||= []).splice(r, 0, (tb.rc || [])[r - 1] || ''); draw(tb.id, null, [r, 0]); }
@@ -635,7 +667,7 @@ export async function mountNotes(host, { table, id, now, seek, label }) {
       else if (a === 'col-' && cols > 1) { R.forEach(x => x.splice(c, 1)); b.cw.splice(c, 1); draw(b.id, null, [r, Math.max(0, c - 1)]); }
       else if (a === 'fit') { b.cw = Array(cols).fill(COLW); b.rh = []; draw(b.id, null, [r, c]); }
     }
-    save();
+    save(); remember();   // كل خطوة لوحدها في "تراجع"
   }
   dock.addEventListener('click', e => { const btn = e.target.closest('button[data-a], button[data-t], button[data-cmd]'); if (btn) { e.preventDefault(); onAct(btn); } });
   host.addEventListener('click', e => { const btn = e.target.closest('button[data-a], .nt-add'); if (btn && host.contains(btn)) { e.preventDefault(); onAct(btn); } });
