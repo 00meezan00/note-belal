@@ -56,7 +56,7 @@ export async function openTask(id, defaults = {}) {
 export const taskActions = {
   pick(el) {
     const g = el.closest('[data-group]'); g.querySelectorAll('button').forEach(b => b.classList.toggle('on', b === el));
-    if (g.dataset.group === 'mkind') { const sh = sheetEl(); sh.querySelector('[data-for=book]').hidden = el.dataset.v !== 'book'; sh.querySelector('[data-for=audio]').hidden = el.dataset.v === 'book'; }
+    if (g.dataset.group === 'mkind') { const sh = sheetEl(); sh.querySelectorAll('[data-for=book]').forEach(x => x.hidden = el.dataset.v !== 'book'); sh.querySelectorAll('[data-for=audio]').forEach(x => x.hidden = el.dataset.v === 'book'); }
     if (g.dataset.group === 'day') {
       const inp = sheetEl().querySelector('[name=due_on]');
       inp.hidden = el.dataset.v !== 'date';

@@ -5,7 +5,7 @@ import { linksSlot, fillLinks, archiveWithUndo, doRefresh } from './comps.js';
 import { lifeData, taPicker, taRow, taValue, trackByName } from './life.js';
 import { deptData } from './people.js';
 import { tplBody } from './templates.js';
-import { learnBlock, spendBlock, applyCards, mediaView } from './learn.js';
+import { learnBlock, spendBlock, applyCards, mediaView, durField, linkField, openLink, parseHM, durWords } from './learn.js';
 
 const st = { learn: 'courses', course: 'active', org: 'depts', hire: '', rec: 'rec' };
 const CSTAT = [['active', 'شغال فيها'], ['done', 'خلصت'], ['wishlist', 'عايز آخدها']];
@@ -95,6 +95,8 @@ async function courseSheet(c = {}) {
   const slots = sortSlots(c.schedule || []), d = await lifeData(), dev = trackByName(d, 'تطويري');
   openSheet(c.id ? 'الكورس' : 'كورس جديد', `
     <label class="field"><span>اسم الكورس</span><input name="title" value="${esc(c.title)}" ${c.id ? '' : 'autofocus'} placeholder="مثلًا: الإدارة المالية"></label>
+    ${linkField(c.url)}
+    <div class="grid2">${durField('total_minutes', 'مدة الكورس كلها', c.total_minutes, 'مثلًا 12:30')}${durField('current_minutes', 'اتفرجت قد إيه؟', c.current_minutes, 'مثلًا 3:15')}</div>
     <div class="field"><span>الحالة</span>${pills('cstat', CSTAT, c.status || 'active')}</div>
     ${taPicker(d, c.id ? taValue(c) : dev ? 't:' + dev.id : '')}
     <div class="card stack" style="gap:10px;padding:12px 14px">
@@ -232,15 +234,17 @@ export default {
         title: 'تعلّمي', sub: `${all.filter(c => c.status === 'active').length} شغال فيهم · ${all.filter(c => c.status === 'done').length} خلصوا${lateN ? ` · ${lateN} متأخر` : ''}`, back: '#/today',
         fab: { label: 'كورس', act: 'course-new' },
         html: `<div class="stack">${top}${ask}<div class="seg">${CSTAT.map(([k, l]) => `<button class="${st.course === k ? 'on' : ''}" data-act="ctab" data-v="${k}">${l} <span class="num">${all.filter(c => c.status === k).length}</span></button>`).join('')}</div>
-          ${L.length ? L.map(c => { const p = c.lessons_total ? c.lessons_done / c.lessons_total * 100 : (c.status === 'done' ? 100 : 0);
+          ${L.length ? L.map(c => { const pl = c.lessons_total ? c.lessons_done / c.lessons_total * 100 : 0, pt = c.total_minutes ? Math.min(100, (c.current_minutes || 0) / c.total_minutes * 100) : 0;
+            const p = c.status === 'done' ? 100 : Math.max(pl, pt);   // بالدروس أو بالوقت، أيهم أكتر
             const nx = nextSlot(c);
             const lt = LT[c.id];
-            return `<div class="card stack" style="gap:10px${lt.missed.length ? ';border-color:var(--bad)' : ''}"><div class="stack" style="gap:8px;cursor:pointer" data-act="course-open" data-id="${c.id}" role="button" tabindex="0"><div class="between"><span class="title">${esc(c.title)}</span><span class="mut">${c.lessons_total ? `${c.lessons_done} من ${c.lessons_total} دروس` : ''}</span></div>
+            return `<div class="card stack" style="gap:10px${lt.missed.length ? ';border-color:var(--bad)' : ''}"><div class="stack" style="gap:8px;cursor:pointer" data-act="course-open" data-id="${c.id}" role="button" tabindex="0"><div class="between"><span class="title">${esc(c.title)}</span><span class="mut">${c.lessons_total ? `${c.lessons_done} من ${c.lessons_total} دروس` : c.total_minutes ? `${c.current_minutes ? durWords(c.current_minutes) + ' من ' : ''}${durWords(c.total_minutes)}` : ''}</span></div>
+              ${c.lessons_total && c.total_minutes ? `<div class="mut">${c.current_minutes ? `اتفرجت ${durWords(c.current_minutes)} من ` : 'مدته '}${durWords(c.total_minutes)}</div>` : ''}
               ${nx ? `<div class="row" style="gap:6px;font-size:14px">${ic('bell', 16)}<span>الجاي: <b>${nx.text}</b></span>${nx.d === 0 ? '<span class="tag amb">النهاردة</span>' : ''}</div>` : ''}
               ${c.status === 'active' && (c.schedule || []).length ? `<div class="mut">${slotsText(c.schedule)}</div>` : ''}
               ${c.status !== 'wishlist' ? bat(p, c.status === 'done' ? 'done' : 'run') : ''}
               ${c.learned ? `<div class="mut" style="line-height:1.6">اتعلمت: <span style="color:var(--ink)">${esc(c.learned)}</span></div>` : ''}
-              ${c.applied_in ? `<span class="chip" style="align-self:flex-start">${ic('link', 13)}طبقته في: ${esc(c.applied_in)}</span>` : (c.status === 'done' ? '<span class="late" style="font-size:13px">لسه ما اتطبقش في الشغل</span>' : '')}</div>${lateBox(c, lt)}</div>`; }).join('')
+              ${c.applied_in ? `<span class="chip" style="align-self:flex-start">${ic('link', 13)}طبقته في: ${esc(c.applied_in)}</span>` : (c.status === 'done' ? '<span class="late" style="font-size:13px">لسه ما اتطبقش في الشغل</span>' : '')}</div>${openLink(c.url)}${lateBox(c, lt)}</div>`; }).join('')
             : empty(st.course === 'active' ? 'سجّل الكورسات اللي بتاخدها، ومواعيدها، وكام درس خلصت، وطبقت إيه منها.' : 'مفيش حاجة هنا لسه.')}</div>`,
       };
     },
@@ -374,7 +378,9 @@ export const moreGlobal = {
     const seen = new Set();
     const schedule = sortSlots([...s.querySelectorAll('[data-slot]')].map(r => ({ day: Number(r.querySelector('[data-k=day]').value), time: r.querySelector('[data-k=time]').value }))
       .filter(x => x.time && !seen.has(x.day + x.time) && seen.add(x.day + x.time)));
-    const row = { title: f.title, status, lessons_total: tot, lessons_done: done, learned: f.learned || null, applied_in: f.applied_in || null,
+    const tm = parseHM(f.total_minutes), cm = parseHM(f.current_minutes) || 0;
+    if (!tot && tm && cm >= tm && status === 'active') { status = 'done'; toast('مبروك! الكورس خلص. متنساش تكتب طبقته في إيه'); }
+    const row = { title: f.title, status, lessons_total: tot, lessons_done: done, url: f.url || null, total_minutes: tm, current_minutes: cm, learned: f.learned || null, applied_in: f.applied_in || null,
       schedule, remind_before: Number(picked('before') ?? 15), schedule_until: f.schedule_until || null, session_minutes: Number(picked('slen') ?? 60), ...taRow(f.ta, await lifeData()) };
     try {
       // بنبدأ نعدّ الحضور من النهاردة: لكورس جديد، أو لو غيّرت المواعيد (عشان الأيام اللي فاتت بالمواعيد الجديدة متتحسبش عليك)
